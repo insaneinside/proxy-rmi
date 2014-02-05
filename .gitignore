@@ -1,0 +1,10 @@
+# Pesky pre-revision-control *~ backup files
+*~
+
+# Built gem files
+*.gem
+
+
+# `yardoc`-generated files
+doc/yardoc-db
+doc/generated

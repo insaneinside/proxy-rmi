@@ -1,0 +1,4 @@
+--output-dir doc/generated
+--markup markdown
+--db doc/yardoc-db
+lib/proxy.rb
