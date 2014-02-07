@@ -63,7 +63,7 @@ module Proxy
     #
     #   @return [Integer] `id`
     def register(arg)
-      # $stderr.puts("#{self}.#{__method__}(#{ei})")
+      $stderr.puts("#{self}.#{__method__}(#{arg})") if @verbose
       case arg
       when Integer
         if not @object_references.has_key? arg
@@ -85,7 +85,7 @@ module Proxy
     # Release a remote object.
     # @param [Integer,Proxy::Object] id Proxied object or remote object ID.
     def release(id)
-      $stderr.puts("#{self}.#{__method__}(#{id})")
+      $stderr.puts("#{self}.#{__method__}(#{id})") if @verbose
       case id
       when Integer
         send_message(Message.release(id))
@@ -101,7 +101,7 @@ module Proxy
       ref = @object_references[id]
       ref.refcount -= 1
       if ref.refcount <= 0
-        $stderr.puts("Dropping reference to ID #{obj}")
+        $stderr.puts("Dropping reference to ID #{obj}") if @verbose
         @object_references.delete(obj)
       end
     end
@@ -160,6 +160,7 @@ module Proxy
 
     # Close the node's connection to the remote host.
     def close()
+      $stderr.puts("#{self}.#{__method__}()") if @verbose
       send_message(Message.new(:bye))
       super()
     end
