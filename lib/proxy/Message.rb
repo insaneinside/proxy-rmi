@@ -96,13 +96,15 @@ module Proxy
     #
     # @overload initialize(type, value)
     #
-    #   Initializes as the given type of 
+    #   Initializes as the given type of message.
+    #
+    #  @param [
     def initialize(a, b = nil, note = nil)
       @note = note
       case a
       when Symbol
         @type = a
-        @value = Message.is_copyable?(b) ? b : 
+        @value = b
         @raw_value = b
       else
         @raw_value = a
