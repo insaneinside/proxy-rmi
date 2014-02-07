@@ -40,7 +40,11 @@ module Proxy
     alias_method :[], :fetch
 
 
-    # Evaluate code on the other side of the connection.  This is probably a bad idea...
+    # Evaluate code on the other side of the connection.
+    #
+    # @warning THIS METHOD IS PROBABLY A BAD IDEA.  You probably shouldn't use
+    #     it.
+    #
     # @param [String] string Code to be evaluated.
     def remote_eval(string)
       note = 'eval_' + Time.now.to_s

@@ -239,7 +239,9 @@ module Proxy
       end
     end
 
-    # "Receive" thread main loop.  Fetches messages sent by the remote node.
+    # "Receive" thread main loop.  Fetches messages sent by the remote node and, for each
+    # message, either signals threads waiting on criteria matching that message or (if no
+    # threads were waiting for such a message) pushes it onto the "incoming messages" queue.
     def receive_message_loop()
       begin
         while not @input_stream.closed?

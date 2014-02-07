@@ -5,7 +5,10 @@ require 'continuation'
 ['Object', 'MessagePasser'].each { |n| Proxy.require File.expand_path('../' + n, __FILE__) }
 
 module Proxy
-  # Server class for accepting and managing remote connections.
+  # Server class for managing an exported-object list and accepting and
+  # managing remote connections.  `Server` is designed for connection-based
+  # transports like TCP and UNIX sockets, but can handle single-peer style
+  # usage as well.
   class Server
     @objects = nil
     @clients = nil
@@ -262,6 +265,9 @@ module Proxy
 
 
     # Add an object to the export list.
+    #
+    # @param [String] name Name for the exported object.
+    # @param [Object] val Object to export.
     def add(name, val)
       @objects[name] = val
     end
