@@ -18,13 +18,6 @@ module Proxy
     @object_references = nil
 
 
-    # Whether verbose (debug) output is enabled.
-    # @!attribute [rw] verbose
-    #   @return [Boolean]
-    attr_accessor :verbose
-
-    @verbose = nil
-
     @last_pong_time = nil
     @ping_thread = nil
 
@@ -35,8 +28,7 @@ module Proxy
     # @param [Boolean] verbose Whether we should verbosely report message-passing activity.
     def initialize(socket, verbose = false)
       # $stderr.puts("#{self}.#{__method__}(#{socket})")
-      super(socket)
-      @verbose = verbose
+      super(socket, verbose)
       @object_references = {}
       @last_pong_time = nil
       ObjectSpace.define_finalizer(self, proc { |id|

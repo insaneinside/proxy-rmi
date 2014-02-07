@@ -98,6 +98,7 @@ module Proxy
   # Message-passing interface specialized for use by Proxy's ObjectNodes.
   class MessagePasser
     @socket = nil
+    @verbose = nil
 
     @incoming_messages = nil
     @outgoing_messages = nil
@@ -113,12 +114,20 @@ module Proxy
     #   @return [Socket]
     attr_reader(:socket)
 
+    # Whether verbose (debug) output is enabled.
+    # @!attribute [rw] verbose
+    #   @return [Boolean]
+    attr_accessor :verbose
+
     # Initialize a new instance of MessagePasser.
     #
     # @param [Socket] socket The socket to use for sending and receiving messages.
-    def initialize(socket)
+    def initialize(socket, verbose = false)
       @socket = socket
       @socket.sync = true
+
+      @verbose = verbose
+
 
       @incoming_messages = Queue.new
       @outgoing_messages = Queue.new
@@ -152,7 +161,7 @@ module Proxy
         not msg.kind_of?(Proxy::Message)
 
       if connection_open?
-        $stderr.puts("#{self}.#{__method__}(#{msg}#{blocking ? ', true' : ''})")
+        $stderr.puts("#{self}.#{__method__}(#{msg}#{blocking ? ', true' : ''})") if @verbose
         qm = OutgoingMessage.new(msg)
         @outgoing_messages.push(qm)
         qm.wait if blocking
@@ -182,6 +191,7 @@ module Proxy
     #
     # @param [Hash] opts
     def wait_for_message(opts)
+      $stderr.puts("#{self}.#{__method__}(#{opts.inspect})") if @verbose
       waiter = PendingMessageWait.new(opts)
       @pending_messages_mutex.synchronize do
         @pending_messages.push(waiter)
