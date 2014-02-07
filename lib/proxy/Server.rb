@@ -15,8 +15,7 @@ module Proxy
     @run_mutex = nil
     @run_thread = nil
 
-    @server_class = nil
-    @server_args = nil
+    @main_args = nil
     @server_socket = nil
     @quit_server = nil
 
@@ -58,8 +57,7 @@ module Proxy
       @clients = []
       @run_mutex = Mutex.new
       @run_thread = nil
-      @server_class = args[0]
-      @server_args = args[1..-1]
+      @main_args = args
       @server_socket = nil
       @quit_server = false
 
@@ -77,7 +75,7 @@ module Proxy
     #     running.
     def launch()
       if not running?
-        @run_thread = Thread.new { server_main(@server_class, *@server_args) }
+        @run_thread = Thread.new { server_main(*@main_args) }
         sleep(0.01)
         true
       else
@@ -88,7 +86,8 @@ module Proxy
     # Run the server loop in the current thread.
     def run
       if not running?
-        server_main(@server_class, *@server_args)
+        launch()
+        wait()
       end
     end
       
@@ -110,10 +109,39 @@ module Proxy
       @run_thread.join()
     end
 
-    # Main routine for the server thread.  Waits for incoming connections, and spawns a new
-    # client thread (each with its own ObjectNode) for each incoming connection.
-    def server_main(server_class, *args)
-      @run_mutex.synchronize do
+    # Main routine for the server thread.
+    #
+    # @overload server_main(stream)
+    #
+    #   Service a single connection open on `stream`.
+    #
+    #   @param [IO,Array<IO>] An open IO object, or array of IO objects
+    #     corresponding to input and output streams.
+    #
+    # @overload server_main(connection_class, *args)
+    #
+    #   Service a single connection opened by calling
+    #   `connection_class.new(*args)`.
+    #
+    #   @param [#new] connection_class Class to instantiate for communication.
+    #
+    #   @param [Array] *args Arguments to be passed to `connection_class.new`
+    # 
+    # @overload server_main(server_class, *args)
+    #
+    #   Run the server with support for an arbitrary number of clients via a
+    #   connection-based transport.
+    #
+    #   @param [#open(*args)->#accept] server_class A class on which `open`
+    #     may be called (with arguments `*args`) to obtain an object that has
+    #     an `accept` method.
+    #
+    #   @param [Array] *args Arguments to be passed to `server_class.open`.
+    def server_main(obj, *args)
+      if not obj.kind_of?(Class)
+        client_loop(ObjectNode.new(obj, *args))
+      elsif obj.respond_to?(:open)
+        @run_mutex.synchronize do
           $stderr.puts("[#{self.class}] Entering main server loop; server is #{server_class.name} #{args.inspect}") if @verbose
 
           # sighandler = proc { @run_thread.kill; Process.abort }
@@ -122,34 +150,38 @@ module Proxy
           # Signal.trap(:TERM, &sighandler)
 
           # Delete any old UNIX socket lying around, if needed, and open the server socket.
-          FileUtils::rm_f(args[0]) if server_class == UNIXServer
+          FileUtils::rm_f(args[0]) if obj == UNIXServer
           callcc do |cc|
-          begin
-            server_class.open(*args) do |serv|
-              @server_socket = serv
-              while not serv.closed? and not @quit_server do
-                sock = serv.accept
+            begin
+              obj.open(*args) do |serv|
+                @server_socket = serv
+                while not serv.closed? and not @quit_server do
+                  sock = serv.accept
 
-                cli = ObjectNode.new(sock, @verbose)
-                @clients << cli
-                Thread.new {
-                  begin
-                    client_loop(cli)
-                  rescue IOError, Errno::EPIPE
-                    cli.close!
-                    Thread.exit
-                  end
-                }
+                  cli = ObjectNode.new(sock, @verbose)
+                  @clients << cli
+                  Thread.new {
+                    begin
+                      client_loop(cli)
+                    rescue IOError, Errno::EPIPE
+                      cli.close!
+                      Thread.exit
+                    end
+                  }
+                end
               end
+            rescue IOError, Errno::EPIPE
+              Thread.exit
             end
-          rescue IOError, Errno::EPIPE
-            Thread.exit
           end
         end
+
         @clients.each { |cli| cli.close if cli.connection_open? }
-        FileUtils::rm_rf(args[0]) if server_class == UNIXServer
+        FileUtils::rm_rf(args[0]) if obj == UNIXServer
         $stderr.puts("[#{self.class}] Server loop exited.") if @verbose
-        end
+      elsif obj.ancestors.include?(IO)
+        client_loop(ObjectNode.new(obj.new(*args)))
+      end
     end
 
     # This method contains the loop for each client connection.

@@ -23,7 +23,7 @@ module Proxy
 
     # Initialize a new object-proxy node.
     #
-    # @param [IO,Socket] socket The stream to use for communication.
+    # @param [IO,Array<IO>] socket The stream or streams to use for communication.
     #
     # @param [Boolean] verbose Whether we should verbosely report message-passing activity.
     def initialize(socket, verbose = false)
@@ -35,7 +35,7 @@ module Proxy
                                      if not socket.closed?
                                        begin
                                          m = Marshal.dump(Message.new(:bye))
-                                         socket.sendmsg([m.length].pack('N') + m)
+                                         socket.write([m.length].pack('N') + m)
                                        rescue Errno::EPIPE
                                        ensure
                                          socket.close()

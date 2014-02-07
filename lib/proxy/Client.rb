@@ -5,16 +5,17 @@ module Proxy
   # An ObjectNode with support for fetching remote objects.
   class Client < ::Proxy::ObjectNode
     # Initialize a new Client instance.
-    # @overload initialize(socket)
-    #   @param [BasicSocket] socket An open socket to use for communication.
+    # @overload initialize(*args)
+    #
+    #   @param [] *args Arguments accepted by ObjectNode#initialize.
     #
     # @overload initialize(klass, *args)
-    #   @param [Class] klass A subclass of BasicSocket to be instantiated for communication.
+    #   @param [Class] klass A subclass of IO to be instantiated for communication.
     #   @param [Object] args Arguments to pass to `klass.new`.
     def initialize(*s)
-      if s.length == 1 and s[0].kind_of?(BasicSocket)
-        super(s[0])
-      elsif s[0].ancestors.include?(BasicSocket)
+      if (s[0].kind_of?(BasicSocket) or s[0].kind_of?(IO)) or s[0].kind_of?(Array)
+        super(*s)
+      elsif s[0].respond_to?(:ancestors) and s[0].ancestors.include?(IO)
         super(s[0].new(*s[1..-1]))
       else
         raise ArgumentError.new("Don't know what to do with arguments: #{s.inspect}")

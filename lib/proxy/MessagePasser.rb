@@ -97,7 +97,8 @@ module Proxy
 
   # Message-passing interface specialized for use by Proxy's ObjectNodes.
   class MessagePasser
-    @socket = nil
+    @input_stream = nil
+    @output_stream = nil
     @verbose = nil
 
     @incoming_messages = nil
@@ -109,10 +110,15 @@ module Proxy
     @pending_messages = nil
     @pending_messages_mutex = nil
 
-    # Instance's socket instance.
-    # @!attribute [r] socket
-    #   @return [Socket]
-    attr_reader(:socket)
+    # @!attribute [r]
+    #   Instance's input stream.
+    #   @return [IO]
+    attr_reader(:input_stream)
+
+    # @!attribute [r]
+    #   Instance's output stream.
+    #   @return [IO]
+    attr_reader(:output_stream)
 
     # Whether verbose (debug) output is enabled.
     # @!attribute [rw] verbose
@@ -121,11 +127,25 @@ module Proxy
 
     # Initialize a new instance of MessagePasser.
     #
-    # @param [Socket] socket The socket to use for sending and receiving messages.
+    # @overload initialize(socket, verbose=false)
+    #
+    #   @param [IO] socket The socket or IO stream to use for sending and
+    #     receiving messages.
+    #
+    # @overload initialize(streams, verbose=false)
+    #
+    #   @param [Array<IO>] streams Input and output streams to use for sending
+    #     and receiving messages, respectively.
     def initialize(socket, verbose = false)
-      @socket = socket
-      @socket.sync = true
-
+      if socket.kind_of?(Array)
+        @input_stream = socket[0]
+        @output_stream = socket[1]
+      else
+        @input_stream = socket
+        @output_stream = socket
+      end
+      @input_stream.sync = true if @input_stream.respond_to?(:sync=)
+      @output_stream.sync = true if @output_stream.respond_to?(:sync=)
       @verbose = verbose
 
 
@@ -141,7 +161,8 @@ module Proxy
 
     # Close the connection.
     def close()
-      @socket.close() if not @socket.closed?
+      @input_stream.close() if not @input_stream.closed?
+      @output_stream.close() if not @output_stream.closed?
       @receive_thread.kill if @receive_thread.alive?
       @send_thread.kill if @send_thread.alive?
     end
@@ -150,7 +171,8 @@ module Proxy
     # @!attribute [r] connection_open?
     #   @return [Boolean]
     def connection_open?
-      not @socket.closed? and @receive_thread.alive? and @send_thread.alive?
+      not @input_stream.closed? and not @output_stream.closed? and
+        @receive_thread.alive? and @send_thread.alive?
     end
 
     # Queue a message to be sent to the remote node.
@@ -204,15 +226,15 @@ module Proxy
     # and signals the `OutgoingMessage` object for send-notification.
     def send_message_loop()
       begin
-        while not @socket.closed?
+        while not @output_stream.closed?
           msg = @outgoing_messages.pop
-          @socket.sendmsg([msg.data.length].pack('N') + msg.data)
+          @output_stream.write_nonblock([msg.data.length].pack('N') + msg.data)
           msg.signal
         end
       rescue EOFError, Errno::EPIPE
         # $stderr.puts(e.message)
         # $stderr.puts(e.backtrace.join(?\n))
-        @socket.close()
+        @output_stream.close()
         Thread.exit
       end
     end
@@ -220,12 +242,12 @@ module Proxy
     # "Receive" thread main loop.  Fetches messages sent by the remote node.
     def receive_message_loop()
       begin
-        while not @socket.closed?
+        while not @input_stream.closed?
           # Receive and load the message.
-          len = @socket.recv(4).unpack('N')[0]
+          len = @input_stream.read(4).unpack('N')[0]
           break if len.nil? 
 
-          data = @socket.recv(len)
+          data = @input_stream.read(len)
           msg = Marshal.load(data)
 
           # Check if there was a wait for it.
