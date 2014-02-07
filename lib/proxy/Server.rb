@@ -11,6 +11,7 @@ module Proxy
     @clients = nil
 
     @verbose = nil
+    @eval_enabled = false
 
     @run_mutex = nil
     @run_thread = nil
@@ -50,9 +51,15 @@ module Proxy
     #   @return [Boolean]
     attr_accessor :verbose
 
+    # @!attribute [rw] eval_enabled
+    #   Whether to allow clients to request code evaluation for them
+    #   @return [Boolean]
+    attr_accessor :eval_enabled
+
     def initialize(*args)
       super()
       @verbose = false
+      @eval_enabled = false
       @objects = {}
       @clients = []
       @run_mutex = Mutex.new
@@ -234,12 +241,14 @@ module Proxy
         node.send_message(node.export(o, msg.value))
 
       when :eval
-        o = begin
-              Kernel.eval(msg.value)
-            rescue SyntaxError => err
-              err
-            end
-        node.send_message(node.export(o, msg.note))
+        if @eval_enabled
+          o = begin
+                Kernel.eval(msg.value)
+              rescue SyntaxError => err
+                err
+              end
+          node.send_message(node.export(o, msg.note))
+        end
 
       when :list_exported
         o = @objects.keys
