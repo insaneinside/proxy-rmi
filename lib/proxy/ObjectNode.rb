@@ -143,7 +143,7 @@ module Proxy
     # @return Result of the remote method call.
     def invoke(id, sym, args, block)
       $stderr.puts("#{self}.#{__method__}: #<0x%x>.#{sym.to_s}(#{args.join(', ')})" % id) if @verbose
-      send_message(Message.invoke(id, sym, args, block ? export(block) : nil))
+      send_message(Message.invoke(id, sym, args, block ? export(block) : nil), true)
       msg = wait_for_message(:note => id)
 
       case msg.type
@@ -160,7 +160,7 @@ module Proxy
 
     # Close the node's connection to the remote host.
     def close()
-      send_message(Message.new(:bye), true)
+      send_message(Message.new(:bye))
       super()
     end
 
@@ -181,7 +181,7 @@ module Proxy
         import(msg)
         
       when :bye
-        send_message(Message.new(:bye_ACK), true)
+        send_message(Message.new(:bye_ACK))
         $stderr.puts("[#{self}] Received \"bye\" message: shutting down.") if @verbose
         close()
         true
