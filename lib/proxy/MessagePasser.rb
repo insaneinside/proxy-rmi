@@ -120,6 +120,13 @@ module Proxy
     #   @return [IO]
     attr_reader(:output_stream)
 
+    # @!attribute [r]
+    #   Input *and* output streams.
+    #   @return [Array<IO>]
+    def socket
+      [@input_stream, @output_stream]
+    end
+
     # Whether verbose (debug) output is enabled.
     # @!attribute [rw] verbose
     #   @return [Boolean]

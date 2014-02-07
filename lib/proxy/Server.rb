@@ -152,7 +152,7 @@ module Proxy
         client_loop(ObjectNode.new(obj, *args))
       elsif obj.respond_to?(:open)
         @run_mutex.synchronize do
-          $stderr.puts("[#{self.class}] Entering main server loop; server is #{server_class.name} #{args.inspect}") if @verbose
+          $stderr.puts("[#{self.class}] Entering main server loop; server is #{obj.name} #{args.inspect}") if @verbose
 
           # sighandler = proc { @run_thread.kill; Process.abort }
           # Signal.trap(:QUIT, &sighandler)
@@ -207,7 +207,7 @@ module Proxy
         node.close
         raise e
       end
-      @clients.delete(node)
+      @clients.delete(node) if @clients.include?(node)
       @client_disconnect_handler.call() if not @client_disconnect_handler.nil?
 
       $stderr.puts("[#{self.class}] Exited client loop for connection #{node.socket.inspect}\n") if @verbose
