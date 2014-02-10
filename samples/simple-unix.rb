@@ -28,7 +28,7 @@ begin
   else
     $stderr.puts("client #{Process.pid}")
 
-    sleep(1)                    # Wait for the server to initialize.
+    sleep(0.5)                  # Wait for the server to initialize.
     cli = Proxy::Client.new(UNIXSocket, SocketFile) # Create client/connect to server.
 
     # Uncomment the following line to get more diagnostic output from the client
