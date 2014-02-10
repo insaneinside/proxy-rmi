@@ -32,7 +32,7 @@ module Proxy
       @object_references = {}
       @last_pong_time = nil
       ObjectSpace.define_finalizer(self, proc { |id|
-                                     if not socket.closed?
+                                     if connection_open?
                                        begin
                                          m = Marshal.dump(Message.new(:bye))
                                          socket.write([m.length].pack('N') + m)
