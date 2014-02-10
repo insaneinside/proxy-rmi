@@ -1,4 +1,3 @@
-require 'socket'
 ['Object', 'ObjectNode'].each { |n| Proxy.require File.expand_path('../' + n, __FILE__) }
 
 module Proxy
@@ -13,8 +12,8 @@ module Proxy
 
     # Fetch a remote object.
     #
-    # @param [String] name The name of the remote object to fetch.  This should be one of the
-    #   names returned by `list_objects`.
+    # @param [String] name The name of the remote object to fetch.  This should
+    #   be one of the names returned by `list_objects`.
     def fetch(name)
       send_message(Message.new(:fetch, name), true)
       handle_message(wait_for_message(:note => name))
@@ -22,7 +21,8 @@ module Proxy
     alias_method :[], :fetch
 
 
-    # Evaluate code on the other side of the connection.
+    # Evaluate code on the other side of the connection.  Note that remote
+    # evaluation is disabled by default in Server.
     #
     # @warning THIS METHOD IS PROBABLY A BAD IDEA.  You probably shouldn't use
     #     it.
