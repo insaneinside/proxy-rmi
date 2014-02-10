@@ -151,10 +151,10 @@ module Proxy
     #
     #   @param [Array] *args Arguments to be passed to `server_class.open`.
     def server_main(obj, *args)
-      if not obj.kind_of?(Class)
-        client_loop(ObjectNode.new(obj, *args))
-      elsif obj.respond_to?(:open)
-        @run_mutex.synchronize do
+      @run_mutex.synchronize do
+        if not obj.kind_of?(Class)
+          client_loop(ObjectNode.new(obj, *args))
+        elsif obj.respond_to?(:open)
           $stderr.puts("[#{self.class}] Entering main server loop; server is #{obj.name} #{args.inspect}") if @verbose
 
           # sighandler = proc { @run_thread.kill; Process.abort }
@@ -187,13 +187,13 @@ module Proxy
               Thread.exit
             end
           end
-        end
 
-        @clients.each { |cli| cli.close if cli.connection_open? }
-        FileUtils::rm_rf(args[0]) if obj == UNIXServer
-        $stderr.puts("[#{self.class}] Server loop exited.") if @verbose
-      elsif obj.ancestors.include?(IO)
-        client_loop(ObjectNode.new(obj.new(*args)))
+          @clients.each { |cli| cli.close if cli.connection_open? }
+          FileUtils::rm_rf(args[0]) if obj == UNIXServer
+          $stderr.puts("[#{self.class}] Server loop exited.") if @verbose
+        elsif obj.ancestors.include?(IO)
+          client_loop(ObjectNode.new(obj.new(*args)))
+        end
       end
     end
 
