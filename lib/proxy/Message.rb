@@ -135,8 +135,8 @@ module Proxy
     end
 
     # Create an invocation-request message.
-    def self.invoke(remote_id, symbol, args_array, block_obj)
-      new(:invoke, InvokeMsg.new(remote_id, symbol, args_array, block_obj))
+    def self.invoke(remote_id, symbol, args_array, block_obj, note = nil)
+      new(:invoke, InvokeMsg.new(remote_id, symbol, args_array, block_obj), note)
     end
 
 
