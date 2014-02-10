@@ -94,11 +94,13 @@ module Proxy
     #   @param [Object] object The object to export.
     #    
     #
-    # @overload initialize(type, value)
+    # @overload initialize(type, value, note = nil)
     #
-    #   Initializes as the given type of message.
+    #   Initializes as the given type of message with a specific value.
     #
-    #  @param [
+    #   @param [Symbol] type Type of message to create.
+    #   @param [Object] value Message's body.
+    #   @param [Object] note A transaction-ID or similar.
     def initialize(a, b = nil, note = nil)
       @note = note
       case a
