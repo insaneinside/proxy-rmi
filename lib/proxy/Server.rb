@@ -93,10 +93,13 @@ module Proxy
       end
     end
 
-    # Run the server loop in the current thread.
-    def run
+    # Run the server loop in the current thread.  If the server is already
+    # running in a different thread, this call will block until that thread
+    # exits.
+    def run()
       if not running?
-        launch()
+        server_main(*@main_args)
+      elsif @run_thread.alive?
         wait()
       end
     end
