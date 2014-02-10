@@ -1,9 +1,11 @@
-#!/usr/bin/ruby
+#!/usr/bin/ruby -W
 
-# This file illustrates basic use of ProxyRMI.  We fork the process, and then
-# continue as either a remote-object proxy server, or client.  The server
-# exports a two values, only one of which ProxyRMI will copy; the client fetches
-# and displays both (using their `inspect` methods).
+# This file illustrates basic use of ProxyRMI with UNIX sockets and a test
+# object that gets passed by value.
+
+# We fork the process, and then continue as either a proxy server, or as a
+# client to that server.  The server exports a single value -- the Ruby search
+# path -- and the client fetches and pretty-prints it.
 
 require 'fileutils'
 require_relative '../lib/proxy.rb'
