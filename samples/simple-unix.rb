@@ -10,14 +10,6 @@ require_relative '../lib/proxy.rb'
 
 SocketFile = 'foo.sock'
 
-class CustomTypeInstancesAreNotExportable
-  def inspect()
-    $stdout.puts("#{super()}.inspect(): running in process #{Process.pid}")
-    super()
-  end
-end
-
-
 $stdout.print("PIDs: server #{Process.pid}, ")
 begin
   if (cpid = Process.fork)
@@ -29,7 +21,6 @@ begin
     # serv.verbose = true
 
     serv.add('path', $:)
-    serv.add('an_object', CustomTypeInstancesAreNotExportable.new)
 
     serv.run()
   else
@@ -44,10 +35,10 @@ begin
 
     $stdout.puts('Server exports list: ' + cli.list_objects.inspect)
 
-    $stdout.puts('     `path\' object: ' + cli.fetch('path').inspect)
-    $stdout.puts('`an_object\' object: ' + cli.fetch('an_object').inspect)
+    ha = '`path\' value: '
+    $stdout.puts(ha + cli.fetch('path').join("\n" + (' ' * ha.length)))
 
-    cli.send_message(:shutdown, true) # tell the server to shut down
+    cli.send_message(:shutdown) # tell the server to shut down
     cli.close
   end
 rescue Exception => e
