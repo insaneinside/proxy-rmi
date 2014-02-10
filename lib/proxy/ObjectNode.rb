@@ -23,12 +23,25 @@ module Proxy
 
     # Initialize a new object-proxy node.
     #
-    # @param [IO,Array<IO>] socket The stream or streams to use for communication.
+    # @overload initialize(klass, *args, verbose=false)
+    #   @param [Class] klass A subclass of IO to be instantiated for communication.
+    #   @param [Object] args Arguments to pass to `klass.new`.
     #
-    # @param [Boolean] verbose Whether we should verbosely report message-passing activity.
-    def initialize(socket, verbose = false)
+    # @overload initialize(stream, verbose=false)
+    #   @param [IO,Array<IO>] stream The stream or streams to use for communication.
+    #   @param [Boolean] verbose Whether we should verbosely report message-passing activity.
+    def initialize(*s)
+      if s[0].kind_of?(IO) or s[0].kind_of?(Array)
+        super(*s)
+      elsif s[0].respond_to?(:ancestors) and s[0].ancestors.include?(IO)
+        verbose = false
+        verbose = s.pop if s[-1].kind_of?(FalseClass) or s[-1].kind_of?(TrueClass)
+        super(s[0].new(*s[1..-1]), verbose)
+      else
+        raise ArgumentError.new("Don't know what to do with arguments: #{s.inspect}")
+      end
+
       # $stderr.puts("#{self}.#{__method__}(#{socket})")
-      super(socket, verbose)
       @object_references = {}
       @last_pong_time = nil
       ObjectSpace.define_finalizer(self, proc { |id|
