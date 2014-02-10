@@ -30,6 +30,27 @@ module Proxy
               p o
             }
             )
+
+  # Here we rewrite the `raise` method (inherited from Kernel) to ensure that
+  # ERROR information is printed to the standard ERROR output.
+  #
+  # Some use cases for ProxyRMI involve scripts that communicate over `$stdin`
+  # and `$stdout`; in such cases, Ruby's (very stupid) default behaviour of
+  # dumping debug/error information to `$stdout` would very much confuse the
+  # remote MessagePasser.
+  #
+  # Note that this method will be called only within the scope of the Proxy
+  # module; while we _could_ directly override the implementation in Kernel,
+  # it's probably impolite to do so.
+  alias _raise raise
+  def self.raise(*a)
+    begin
+      _raise(*a)
+    rescue Exception => e
+      $stderr.print e.class, ": ", e.message, "\n"
+      $stderr.puts e.backtrace unless e.backtrace.nil?
+    end
+  end
 end
 
 ['Client', 'Server'].each { |n| Proxy.require(File.expand_path('../proxy/' + n, __FILE__)) }
