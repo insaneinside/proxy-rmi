@@ -1,24 +1,24 @@
 module Proxy
 
-    # Special value-type used for method invocation requests.
-    class InvokeMsg
-      @id = nil
-      @sym = nil
-      @args = nil
-      @block = nil
-      attr_reader :id, :sym, :args, :block
-      def initialize(_remote_id, symbol, args_array, block_obj)
-        begin
-          @id = _remote_id
-          @sym = symbol
-          @args = args_array
-          @block = block_obj
-        rescue SystemStackError => err
-          $stderr.puts(err.inspect)
-          $stderr.puts(err.backtrace.join("\n"))
-        end
+  # Special value-type used for method invocation requests.
+  class InvokeMsg
+    @id = nil
+    @sym = nil
+    @args = nil
+    @block = nil
+    attr_reader :id, :sym, :args, :block
+    def initialize(_remote_id, symbol, args_array, block_obj)
+      begin
+        @id = _remote_id
+        @sym = symbol
+        @args = args_array
+        @block = block_obj
+      rescue SystemStackError => err
+        $stderr.puts(err.inspect)
+        $stderr.puts(err.backtrace.join("\n"))
       end
     end
+  end
 
   # Structured representation of a network message.
   class Message
