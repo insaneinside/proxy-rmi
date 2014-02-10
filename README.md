@@ -21,7 +21,7 @@ argument to `Proxy::ObjectNode.new`, `Proxy::Server.new`, or
     local objects, and makes use of object finalizers on locally-held proxies
     to release remote objects.
 
-    `ObjectNode`'s initializer accepts either a class to instantiate, plus
+    ObjectNode's initializer accepts either a class to instantiate, plus
     arguments to supply when instantiating it
 
         ObjectNode.new(TCPSocket, '192.168.0.100', 1234)
@@ -31,23 +31,24 @@ argument to `Proxy::ObjectNode.new`, `Proxy::Server.new`, or
         ObjectNode.new(TCPSocket.new('192.168.0.100', 1234))
         ObjectNode.new([$stdin, $stdout])  # note the array!
 
-    In the latter usage, the `ObjectNode` instace will use the separate streams
+    In the latter usage, the ObjectNode instance will use the separate streams
     for input and output.  Note that because Ruby is braindead and uses
     standard output for things like reporting uncaught exceptions (which should
     be written to standard error instead), this particular example may be
     problematic...
   * `Server` implements a mechanism for exporting an enumerable list of named
     objects to connection peers.  In addition to the instantiation styles
-    supported by `ObjectNode`, it also provides support for multi-connection
+    supported by ObjectNode, it also provides support for multi-connection
     server functionality:
 
         server = Proxy::Server.new(TCPServer, '0.0.0.0', 1234)
 
     Server-like usage is chosen whenever the first argument to `new` is a class
     _and_ responds to `open`.
-  * `Client` extends `ObjectNode` with methods `list_objects()` (which requests
-    a list of the object names exported by a `Server` instance), and
-    `fetch(name)` (which fetches a particular exported object by name).
+  * `Client` extends ObjectNode with methods `list_objects()` (which requests a
+    list of the object names exported by a Server instance), and `fetch(name)`
+    (which fetches a particular exported object by name).
+
 
 This code may break _everything_
 ---
