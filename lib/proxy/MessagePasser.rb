@@ -7,9 +7,11 @@ module Proxy
     @result = nil
     @mutex = nil
     @condition_variable = nil
+    @signalled = nil
 
     # Initialize the notifer's internal machinery.
     def initialize()
+      @signalled = false
       @result = nil
       @mutex = Mutex.new
       @condition_variable = ConditionVariable.new
@@ -21,8 +23,9 @@ module Proxy
     #     calls to `wait`.
     def signal(arg = nil)
       @mutex.synchronize do
+        @signalled = true
         @result = arg
-        @condition_variable.signal
+        @condition_variable.broadcast()
       end
     end
 
@@ -32,7 +35,7 @@ module Proxy
     #     thread.
     def wait
       @mutex.synchronize do
-        @condition_variable.wait(@mutex)
+        @condition_variable.wait(@mutex) if not @signalled
         @result
       end
     end
