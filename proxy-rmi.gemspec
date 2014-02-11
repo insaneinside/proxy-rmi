@@ -9,7 +9,7 @@ Gem::Specification.new do |s|
   however, ProxyRMI leverages as much as possible the language's unique features to enable a
   concise and lean implementation.
 EOF
-  s.version     = '1.0.0'
+  s.version     = '0.1.0'
   s.files       = [ 'lib/proxy.rb',
                     'lib/proxy/Client.rb',
                     'lib/proxy/Message.rb',
