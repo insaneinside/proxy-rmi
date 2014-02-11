@@ -18,6 +18,11 @@ module Proxy
     @object_references = nil
 
 
+    # Value to use for the next outgoing-message note (identifier) [e.g. so we
+    # can wait for the reply]
+    @next_message_id = nil
+    @next_message_id_mutex = nil
+
     @last_pong_time = nil
     @ping_thread = nil
 
@@ -54,6 +59,16 @@ module Proxy
                                          socket.close()
                                        end
                                      end})
+
+      @next_message_id = 0
+      @next_message_id_mutex = Mutex.new
+    def next_message_id()
+      value = nil
+      @next_message_id_mutex.synchronize do
+        value = @next_message_id
+        @next_message_id += 1
+      end
+      value
     end
 
     # Prepare an item for export to remote nodes by saving an ObjectReference to it to prevent
