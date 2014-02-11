@@ -31,7 +31,7 @@ module Proxy
     def remote_eval(string)
       note = 'eval_' + Time.now.to_s
       send_message(Message.new(:eval, string, note))
-      import(wait_for_message(:note => note))
+      handle_message(wait_for_message(:note => note))
     end
   end
 end
