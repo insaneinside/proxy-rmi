@@ -29,10 +29,12 @@ module Proxy
       @ProxyObject_object_id = remote_id
       @ProxyObject_class_name = class_name
 
-      ::ObjectSpace.define_finalizer(self, ::Proc.new { |local_id|
-                                       @@remote_objects_map[local_id].client.release(@@remote_objects_map[local_id].remote_id)
+      ::ObjectSpace.define_finalizer(self, ::Proc.new do |local_id|
+                                       entry = @@remote_objects_map[local_id]
+                                       entry.client.release(entry.remote_id) if
+                                         entry.client.connection_open?
                                        @@remote_objects_map.delete(local_id)
-                                     })
+                                     end)
     end
 
 
