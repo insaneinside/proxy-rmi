@@ -136,6 +136,7 @@ module Proxy
 
     # Close the connection.
     def close()
+      $stderr.puts("#{self}.#{__method__}()") if @verbose
       begin
         @input_stream.close() if not @input_stream.closed?
         @output_stream.close() if not @output_stream.closed?

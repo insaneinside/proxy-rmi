@@ -203,8 +203,7 @@ module Proxy
 
     # Close the node's connection to the remote host.
     def close()
-      $stderr.puts("#{self}.#{__method__}()") if @verbose
-      send_message(Message.new(:bye))
+      send_message(Message.new(:bye), true)
       super()
     end
 
