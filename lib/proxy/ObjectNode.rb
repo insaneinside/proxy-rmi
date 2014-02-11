@@ -59,20 +59,11 @@ module Proxy
 
       # $stderr.puts("#{self}.#{__method__}(#{socket})")
       @object_references = {}
-      @last_pong_time = nil
-      ObjectSpace.define_finalizer(self, proc { |id|
-                                     if connection_open?
-                                       begin
-                                         m = Marshal.dump(Message.new(:bye))
-                                         socket.write([m.length].pack('N') + m)
-                                       rescue Errno::EPIPE
-                                       ensure
-                                         socket.close()
-                                       end
-                                     end})
 
       @next_message_id = 0
       @next_message_id_mutex = Mutex.new
+    end
+
     def next_message_id()
       value = nil
       @next_message_id_mutex.synchronize do
@@ -182,7 +173,7 @@ module Proxy
     # @param [Array] args Object
     # @return Result of the remote method call.
     def invoke(id, sym, args, block, attrs = nil)
-      $stderr.puts("#{self}.#{__method__}: #<0x%x>.#{sym.to_s}(#{args.join(', ')})" % id) if @verbose
+      $stderr.puts("#{self}.#{__method__}: #<0x%x>.#{sym.to_s}(#{args.collect { |a| a.inspect }.join(', ')})" % id) if @verbose
 
       msg_id = next_message_id()
 
