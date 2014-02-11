@@ -71,7 +71,7 @@ Install
 This gem has not been uploaded to the (or any) RubyGems repository; to build
 and install it, use the following commands.
 
-    gem build proxy-rmi.gemspec && gem install ProxyRMI-1.0.0.gem
+    gem build proxy-rmi.gemspec && gem install ProxyRMI-0.1.0.gem
 
 
 Legalese
