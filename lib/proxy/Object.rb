@@ -7,6 +7,7 @@ module Proxy
     RemoteObjectEntry = ::Struct.new(:client, :remote_id)
     @ProxyObject_client = nil
     @ProxyObject_object_id = nil
+    @ProxyObject_class_name = nil
     @@remote_objects_map = {}
 
     # Object's remote object-ID.
@@ -21,11 +22,12 @@ module Proxy
     # @param [ObjectNode] client ObjectNode _connected_ to the remote node that owns the object being
     #     proxied.
     # @param [Integer] remote_id  Object ID of the remote object.
-    def initialize(client, remote_id)
+    def initialize(client, remote_id, class_name)
       @@entries = {} if not :@@entries.nil?
 
       @ProxyObject_client = client
       @ProxyObject_object_id = remote_id
+      @ProxyObject_class_name = class_name
 
       @@remote_objects_map[__id__] = RemoteObjectEntry.new(client, remote_id)
 
@@ -38,7 +40,8 @@ module Proxy
 
     # Proxy any calls to missing methods to the remote object.
     def method_missing(sym, *args, &block)
-      @ProxyObject_client.invoke(@ProxyObject_object_id, sym, args, block)
+        @ProxyObject_client.invoke(@ProxyObject_object_id, sym, args, block,
+                                   ObjectNode.get_method_attributes(@ProxyObject_class_name, sym))
     end
   end
 end

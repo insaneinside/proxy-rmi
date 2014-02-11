@@ -11,6 +11,19 @@ module Proxy
   # local references).  Also unlike dRuby, calls to remote methods are performed via
   # `public_send`, ensuring that method visibility is preserved.
   class ObjectNode < MessagePasser
+    @@method_attributes_table = Hash.new(Hash.new([]))
+
+    def self.set_method_attributes(klass, method, attrs)
+      klass = klass.name if klass.kind_of?(Class)
+      @@method_attributes_table[klass][method] = attrs
+    end
+    public_class_method :set_method_attributes
+
+    def self.get_method_attributes(klass, method)
+      klass = klass.name if klass.kind_of?(Class)
+      @@method_attributes_table[klass][method]
+    end
+
     # Reference holder for local objects proxied to the other end of the connection.  
     ObjectReference = Struct.new(:obj, :refcount)
 
@@ -103,7 +116,7 @@ module Proxy
       when Message
         raise ArgumentError.new('Attempt to register non-exported object!') if
           arg.type != :proxied
-        register(arg.value)
+        register(arg.value[0])
       else
         raise ArgumentError.new('Attempt to register unknown object!')
       end
@@ -142,9 +155,10 @@ module Proxy
     # @param [String,nil] note A note indicating what the contained value is.
     #
     # @return [Proxy::Message] A message ready to send to the remote node.
-    def export(obj, note = nil)
+    def export(obj, b = nil, note = nil)
       # $stderr.print("#{self}.#{__method__}(#{obj}) ") if @verbose      
-      m = Message.export(obj, note)
+
+      m = Message.export(obj, b, note)
       register(m) if m.must_register?
       # $stderr.puts("=> #{m}") if @verbose
       m
@@ -157,7 +171,7 @@ module Proxy
     def import(msg)
       $stderr.puts("#{self}.#{__method__}(#{msg})") if @verbose
       if msg.must_register?
-        Proxy::Object.new(self, msg.value)
+        Proxy::Object.new(self, *(msg.value))
       else
         msg.value
       end
@@ -169,20 +183,32 @@ module Proxy
     # @param [Symbol] sym Method to invoke.
     # @param [Array] args Object
     # @return Result of the remote method call.
-    def invoke(id, sym, args, block)
+    def invoke(id, sym, args, block, attrs = nil)
       $stderr.puts("#{self}.#{__method__}: #<0x%x>.#{sym.to_s}(#{args.join(', ')})" % id) if @verbose
-      send_message(Message.invoke(id, sym, args, block ? export(block) : nil), true)
-      msg = wait_for_message(:note => id)
 
-      case msg.type
+      msg_id = next_message_id()
+
+      # TODO: We need to transform any Proxy::Object arguments (that are local
+      # to the remote node) into some kind of
+      # "please-reference-your-local-object" arguments.
+      msg = Message.invoke(id, sym, args, block ? export(block) : nil, msg_id)
+
+
+      if attrs.kind_of?(Array) and attrs.include?(:noreturn)
+        send_message(msg)
+        return true
+      end
+      rmsg = send_message_and_wait(msg, :note => msg_id)
+
+      case rmsg.type
       when :literal
-        msg.value
+        rmsg.value
       when :proxied
-        import(msg)
+        import(rmsg)
       when :error
-        raise msg.value
+        raise rmsg.value
       else
-        msg.value
+        rmsg.value
       end
     end
 
@@ -219,12 +245,15 @@ module Proxy
         true
 
       when :invoke
-        obj = @object_references[msg.value.id].obj
-        $stderr.puts("[#{self}] Invoking #{obj}.#{msg.value.sym.to_s}(#{msg.value.args.collect { |a| a.inspect }.join(', ')})") if @verbose
         result = nil
         begin
           raise 'That\'s not an exported object!' if not @object_references.has_key?(msg.value.id)
-          result = export(obj.public_send(msg.value.sym, *(msg.value.args), &(msg.value.block)), msg.value.id)
+          obj = @object_references[msg.value.id].obj
+          $stderr.puts("[#{self}] Invoking #{obj}.#{msg.value.sym.to_s}(#{msg.value.args.collect { |a| a.inspect }.join(', ')})") if @verbose
+
+          result = export(obj.public_send(msg.value.sym, *(msg.value.args), &(msg.value.block)),
+                          ObjectNode.get_method_attributes(obj.class, msg.value.sym),
+                          msg.note)
         rescue => e
           result = Message.new(:error,
                                if not e.kind_of?(Exception)

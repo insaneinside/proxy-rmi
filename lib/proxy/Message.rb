@@ -120,12 +120,13 @@ module Proxy
         @raw_value = b
       else
         @raw_value = a
-        if Message.is_copyable?(a)
+        if Message.is_copyable?(a) and (b.nil? or (b.kind_of?(Array) and
+                                                   not b.include?(:nocopy)))
           @type = :literal
           @value = @raw_value if not @raw_value.nil?
         else
           @type = :proxied
-          @value = @raw_value.__id__
+          @value = [@raw_value.__id__, @raw_value.class.name]
         end
       end
       # $stderr.puts("#{self.class}::#{__method__}(): result = #{self}")
@@ -133,8 +134,9 @@ module Proxy
     end
 
     # Create a result or value message.  
-    def self.export(obj, note = nil)
-      new(obj, nil, note)
+    def self.export(obj, b = nil, note = nil)
+      note = b if not b.nil? and not b.kind_of?(Array)
+      new(obj, b, note)
     end
 
     # Create a release message.
