@@ -6,7 +6,7 @@ module Proxy
     # List the objects exported by the remote server.
     # @return [Array<String>] An array of exported object names.
     def list_objects
-      send_message(Message.new(:list_exported), true)
+      send_message(Message.new(:list_exported))
       handle_message(wait_for_message(:note => :exports))
     end
 
@@ -15,7 +15,7 @@ module Proxy
     # @param [String] name The name of the remote object to fetch.  This should
     #   be one of the names returned by `list_objects`.
     def fetch(name)
-      send_message(Message.new(:fetch, name), true)
+      send_message(Message.new(:fetch, name))
       handle_message(wait_for_message(:note => name))
     end
     alias_method :[], :fetch
