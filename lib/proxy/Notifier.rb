@@ -33,11 +33,9 @@ module Proxy
     #
     # @return [Object,nil] Any argument passed to the call to `signal` that wakes the current
     #     thread.
-    def wait
-      @mutex.synchronize do
-        @condition_variable.wait(@mutex) if not @signalled
-        @result
-      end
+    def wait()
+      @mutex.synchronize { @condition_variable.wait(@mutex) if not @signalled }
+      @result
     end
   end
 end
