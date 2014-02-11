@@ -265,7 +265,7 @@ module Proxy
           end
         end
       rescue EOFError, Errno::EBADF, Errno::EPIPE
-        stream.close()
+        @input_stream.close()
         Thread.exit
       end
     end
