@@ -221,6 +221,10 @@ module Proxy
         true
 
       when :literal, :proxied
+        # This case is special w.r.t. return value: `handle_message` was called
+        # by the initiator of a transaction, with the remote node's response to
+        # the initiating message (`handle_message` is a better choice than
+        # `import` because that response could have had type `:error`).
         import(msg)
         
       when :bye
