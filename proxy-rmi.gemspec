@@ -2,12 +2,11 @@
 Gem::Specification.new do |s|
   s.platform	= Gem::Platform::RUBY
   s.name        = 'ProxyRMI'
-  s.summary     = 'Simple, lightweight, and transport-agnostic RMI implementation similar to DRb'
+  s.summary     = ' Transport-agnostic RMI implementation similar to dRuby (DRb)'
   s.description = <<-EOF
-  ProxyRMI is a transport-agnostic remote-method-invocation service similar in many ways to DRb,
-  the "distributed object system for Ruby" included in the standard library.  Unlike DRb,
-  however, ProxyRMI leverages as much as possible the language's unique features to enable a
-  concise and lean implementation.
+  ProxyRMI is a transport-agnostic remote-method-invocation service similar in many ways to
+  dRuby (DRb), the "distributed object system for Ruby" included in the standard library.  Unlike
+  DRb, however, ProxyRMI is designed primarily for flexibility and ease-of-use.
 EOF
   s.version     = '0.1.0'
   s.files       = [ 'lib/proxy.rb',
