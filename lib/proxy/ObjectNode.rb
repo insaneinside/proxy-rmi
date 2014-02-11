@@ -36,8 +36,6 @@ module Proxy
     @next_message_id = nil
     @next_message_id_mutex = nil
 
-    @last_pong_time = nil
-    @ping_thread = nil
 
     # Initialize a new object-proxy node.
     #
