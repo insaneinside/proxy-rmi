@@ -70,9 +70,16 @@ module Proxy
     # @return [true,false] `true` if the object can be sent by value.
     # @see {CopyableTypes}
     def self.is_copyable?(val)
-      (val.kind_of?(Array) and not val.collect {|x| is_copyable?(x) }.include?(false)) or
-        (val.kind_of?(Hash) and is_copyable?(val.keys) and is_copyable?(val.values)) or
+      case val
+      when Array
+        not val.collect {|x| is_copyable?(x) }.include?(false)
+      when Hash
+        val.kind_of?(Hash) and
+          is_copyable?(val.keys) and
+          is_copyable?(val.values)
+      else
         CopyableTypes.include?(val.class)
+      end
     end
 
     # Enumerator specifying which values should be dumped by `::Marshal.dump`.
