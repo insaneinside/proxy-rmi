@@ -23,13 +23,11 @@ module Proxy
     #     proxied.
     # @param [Integer] remote_id  Object ID of the remote object.
     def initialize(client, remote_id, class_name)
-      @@entries = {} if not :@@entries.nil?
+      @@remote_objects_map[__id__] = RemoteObjectEntry.new(client, remote_id)
 
       @ProxyObject_client = client
       @ProxyObject_object_id = remote_id
       @ProxyObject_class_name = class_name
-
-      @@remote_objects_map[__id__] = RemoteObjectEntry.new(client, remote_id)
 
       ::ObjectSpace.define_finalizer(self, ::Proc.new { |local_id|
                                        @@remote_objects_map[local_id].client.release(@@remote_objects_map[local_id].remote_id)
