@@ -168,31 +168,37 @@ module Proxy
 
           # Delete any old UNIX socket lying around, if needed, and open the server socket.
           FileUtils::rm_f(args[0]) if obj == UNIXServer
-          callcc do |cc|
+          obj.open(*args) do |serv|
+            @server_socket = serv
             begin
-              obj.open(*args) do |serv|
-                @server_socket = serv
-                while not serv.closed? and not @quit_server do
-                  sock = serv.accept
-
-                  cli = ObjectNode.new(sock, @verbose)
-                  @clients << cli
-                  Thread.new {
-                    begin
-                      client_loop(cli)
-                    rescue IOError, Errno::EPIPE
-                      cli.close!
-                      Thread.exit
-                    end
-                  }
+              while not serv.closed? and not @quit_server do
+                begin
+                  sock = serv.accept_nonblock()
+                rescue Errno::EAGAIN
+                  IO.select([serv])
+                  retry
+                rescue Errno::EBADF
+                  break
                 end
+
+
+                cli = ObjectNode.new(sock, @verbose)
+                @clients << cli
+                Thread.new {
+                  begin
+                    client_loop(cli)
+                  rescue IOError, Errno::EPIPE
+                    cli.close()
+                    Thread.exit
+                  end
+                }
               end
-            rescue IOError, Errno::EPIPE
-              Thread.exit
+            rescue IOError, Errno::EPIPE, Errno::EBADF
+              break
             end
           end
 
-          @clients.each { |cli| cli.close if cli.connection_open? }
+          @clients.each { |cli| cli.close() if cli.connection_open? }
           FileUtils::rm_rf(args[0]) if obj == UNIXServer
           $stderr.puts("[#{self.class}] Server loop exited.") if @verbose
         elsif obj.ancestors.include?(IO)
