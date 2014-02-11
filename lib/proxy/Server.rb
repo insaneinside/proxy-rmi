@@ -101,7 +101,7 @@ module Proxy
     def run()
       if not running?
         server_main(*@main_args)
-      elsif @run_thread.alive?
+      elsif not @run_thread.nil? and @run_thread.alive?
         wait()
       end
     end
@@ -110,18 +110,20 @@ module Proxy
     # Kill the server thread.  This is a ruder version of {#stop}.
     def kill()
       @quit_server = true
-      @run_thread.kill()
+      @server_socket.close()
+      @run_thread.kill() if not @run_thread.nil? and @run_thread.alive?
     end
 
     # Stop the server thread gracefully.
     def stop()
       @quit_server = true
-      @run_thread.join()
+      @server_socket.close()
+      @run_thread.join() if not @run_thread.nil? and @run_thread.alive?
     end
 
     # Wait for the server thread to finish.
     def wait()
-      @run_thread.join()
+      @run_thread.join() if not @run_thread.nil? and @run_thread.alive?
     end
 
     # Main routine for the server thread.
