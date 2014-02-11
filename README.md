@@ -1,4 +1,4 @@
-Proxy: Simple, Lightweight dRuby Alternative
+Proxy: flexible dRuby alternative
 ===
 
 dRuby, the "distributed-object system for Ruby" that comes bundled in the Ruby
