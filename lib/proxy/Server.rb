@@ -59,6 +59,8 @@ module Proxy
     #   @return [Boolean]
     attr_accessor :eval_enabled
 
+    # Initialize the server instance.
+    # @param [*Object] args Arguments to be passed to Server#server_main.
     def initialize(*args)
       super()
       @verbose = false
