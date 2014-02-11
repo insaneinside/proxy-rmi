@@ -129,7 +129,7 @@ module Proxy
       when Integer
         send_message(Message.release(id))
       when Proxy::Object
-        send_message(Message.release(proxy_id))
+        send_message(Message.release(id.proxy_id))
       end
     end
 
