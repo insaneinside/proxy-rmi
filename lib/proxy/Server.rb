@@ -240,10 +240,10 @@ module Proxy
       case msg.type
       when :shutdown
         $stderr.puts("[#{self.class}] Received server-shutdown command.") if @verbose
+        node.close()
         @quit_server = true
-        @server_socket.close
-        @run_thread.kill
-        true
+        @server_socket.close()
+        @run_thread.kill() if not @run_thread.nil? and @run_thread.alive? and @run_thread != Thread.current
         
       when :fetch
         $stderr.puts("[#{self.class}] Received fetch request for \"#{msg.value}\"") if @verbose
