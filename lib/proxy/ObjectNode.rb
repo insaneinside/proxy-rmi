@@ -253,12 +253,7 @@ module Proxy
                           ObjectNode.get_method_attributes(obj.class, msg.value.sym),
                           msg.note)
         rescue => e
-          result = Message.new(:error,
-                               if not e.kind_of?(Exception)
-                                 RuntimeError.new(e)
-                               else
-                                 e
-                               end)
+          result = Message.new(:error, e.kind_of?(Exception) ? e : RuntimeError.new(e), msg.note)
         end
         send_message(result)
         true
