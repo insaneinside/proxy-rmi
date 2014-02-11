@@ -178,31 +178,56 @@ module Proxy
       end
     end
 
+    # Enqueue a wait for a certain message pattern, enqueue the outgoing
+    # message that should cause the peer to send a matching message, and wait
+    # for the response.
+    #
+    # @param [Message] msg The message to be sent.
+    # @param [Hash] opts Incoming-message match patterns.
+    def send_message_and_wait(msg, opts)
+      waiter = enqueue_waiter(opts)
+      send_message(msg)
+      waiter.wait()
+    end
+
     # Wait for the next message from the remote node that matches specific criteria.
     #
     # @param [Hash] opts
     def wait_for_message(opts)
       $stderr.puts("#{self}.#{__method__}(#{opts.inspect})") if @verbose
-      waiter = PendingMessageWait.new(opts)
-      @pending_messages_mutex.synchronize do
-        @pending_messages.push(waiter)
-      end
-      waiter.wait
+      enqueue_waiter(opts).wait()
     end
 
     private
+    def enqueue_waiter(opts)
+      waiter = PendingMessageWait.new(opts)
+      @pending_messages_mutex.synchronize do
+        # Check for unfiltered messages that match this waiter.
+        inc_que = @incoming_messages.instance_variable_get(:@que)
+        inc_que.each { |im|
+          if waiter.matches?(im)
+            inc_que.delete(im)
+            waiter.signal(im)
+            return waiter
+          end }
+        @pending_messages.push(waiter) if not waiter.signalled?
+      end
+      return waiter
+    end
+
+
     # "Send" thread main loop.  Fetches `OutgoingMessage`s from the outgoing queue, sends them,
     # and signals the `OutgoingMessage` object for send-notification.
     def send_message_loop()
       begin
         while not @output_stream.closed?
           msg = @outgoing_messages.pop
-          @output_stream.write_nonblock([msg.data.length].pack('N') + msg.data)
+          @output_stream.sendmsg([msg.data.length].pack('N') + msg.data)
           msg.signal
         end
-      rescue EOFError, Errno::EPIPE
-        # $stderr.puts(e.message)
-        # $stderr.puts(e.backtrace.join(?\n))
+      rescue EOFError, Errno::EPIPE => e
+        $stderr.puts(e.message)
+        $stderr.puts(e.backtrace.join("\n"))
         @output_stream.close()
         Thread.exit
       end
@@ -215,21 +240,28 @@ module Proxy
       begin
         while not @input_stream.closed?
           # Receive and load the message.
-          len = @input_stream.read(4).unpack('N')[0]
-          break if len.nil? 
+          len = @input_stream.recv(4).unpack('N')[0]
+          break if len.nil?
 
-          data = @input_stream.read(len)
-          msg = Marshal.load(data)
+          data = @input_stream.recv(len)
+          begin
+            msg = Marshal.load(data)
+          rescue TypeError => e
+            $stderr.puts("Failed to load message data: >>>#{data}<<<")
+            raise e
+          end
 
           # Check if there was a wait for it.
+          matches = []
           @pending_messages_mutex.synchronize do
             matches = @pending_messages.select { |pm| pm.matches?(msg) }
-            if not matches.empty?
-              @pending_messages -= matches
-              matches.each { |m| m.signal(msg) }
-            else
-              @incoming_messages.push(msg)
-            end
+            @pending_messages -= matches if not matches.empty?
+          end
+
+          if not matches.empty?
+            matches.each { |m| m.signal(msg) }
+          else
+            @incoming_messages.push(msg)
           end
         end
       rescue EOFError, Errno::EBADF, Errno::EPIPE
