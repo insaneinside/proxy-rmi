@@ -172,17 +172,7 @@ module Proxy
     # Fetch the next (unfiltered) message from the remote node.
     def receive_message()
       if connection_open?
-        # $stderr.print("Waiting for message... ")
-        # if @incoming_messages.empty?
-        #   @have_incoming_message_mutex.synchronize do
-        #     @have_incoming_message.wait(@have_incoming_message_mutex)
         obj = @incoming_messages.pop
-        #   end
-        # else
-        #   o = @incoming_messages.pop
-        # end
-        # $stderr.puts("got " + o.inspect)
-
         obj.instance_variable_set(:@type, obj.instance_variable_get(:@type).intern)
         obj
       end
