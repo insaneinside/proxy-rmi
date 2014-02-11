@@ -96,6 +96,12 @@ module Proxy
     #   @return [Boolean]
     attr_accessor :verbose
 
+
+    def set_streams(istream, ostream)
+      @input_stream = Socket.for_fd(istream.fileno)
+      @output_stream = Socket.for_fd(ostream.fileno)
+    end
+
     # Initialize a new instance of MessagePasser.
     #
     # @overload initialize(socket, verbose=false)
@@ -109,11 +115,9 @@ module Proxy
     #     and receiving messages, respectively.
     def initialize(socket, verbose = false)
       if socket.kind_of?(Array)
-        @input_stream = socket[0]
-        @output_stream = socket[1]
+        set_streams(socket[0], socket[1])
       else
-        @input_stream = socket
-        @output_stream = socket
+        set_streams(socket, socket)
       end
       @input_stream.sync = true if @input_stream.respond_to?(:sync=)
       @output_stream.sync = true if @output_stream.respond_to?(:sync=)
@@ -132,8 +136,11 @@ module Proxy
 
     # Close the connection.
     def close()
-      @input_stream.close() if not @input_stream.closed?
-      @output_stream.close() if not @output_stream.closed?
+      begin
+        @input_stream.close() if not @input_stream.closed?
+        @output_stream.close() if not @output_stream.closed?
+      rescue Errno::EBADF
+      end
       @receive_thread.kill if @receive_thread.alive?
       @send_thread.kill if @send_thread.alive?
     end
