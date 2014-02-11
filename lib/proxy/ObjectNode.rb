@@ -136,6 +136,7 @@ module Proxy
       end
     end
 
+
     # Ready a local object for transmission to the node's peer.  If the object is copy-safe, we
     # send a copy -- otherwise we send a proxy.
     #
@@ -153,6 +154,7 @@ module Proxy
       m
     end
 
+
     # Import an object contained in a Proxy message.
     #
     # @param [Proxy::Message] msg Message from which to import.
@@ -165,6 +167,7 @@ module Proxy
         msg.value
       end
     end
+
 
     # Invoke a method on a remote object.
     #
