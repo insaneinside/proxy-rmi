@@ -16,7 +16,8 @@ EOF
                     'lib/proxy/MessagePasser.rb',
                     'lib/proxy/Object.rb',
                     'lib/proxy/ObjectNode.rb',
-                    'lib/proxy/Server.rb'
+                    'lib/proxy/Server.rb',
+                    'lib/proxy/Notifier.rb'
                     ]
   s.authors	= ['Collin J. Sutton']
   # s.add_runtime_dependency('gstreamer', '~> 2.0', '>= 2.0.2')
