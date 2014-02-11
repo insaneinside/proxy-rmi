@@ -22,10 +22,10 @@ module Proxy
 
   # Structured representation of a network message.
   class Message
-    #  Classes of which instances will be copied rather than proxied.
-    CopyableTypes = [ Bignum, Complex, FalseClass, File::Stat, Fixnum, Float, Integer,
-                      MatchData, NilClass, Process::Status, Range, Regexp, String, TrueClass,
-                      Exception ]
+    # Classes of which instances will be copied rather than proxied.
+    CopyableTypes = [ Bignum, Complex, FalseClass, File::Stat, Fixnum, Float,
+                      Integer, MatchData, NilClass, Process::Status, Range,
+                      Regexp, String, TrueClass, Exception ]
 
     @type = nil
     @value = nil
@@ -42,8 +42,8 @@ module Proxy
     #   @return [Symbol]
     attr_reader(:type)
 
-    # Value that will be transmitted with the message.  This will _always_ be a copyable type (see
-    # {is_copyable?}, {CopyableTypes}).
+    # Value that will be transmitted with the message.  This will _always_ be a
+    # copyable type (see {is_copyable?}, {CopyableTypes}).
     #
     # @!attribute [r] value
     #   @return [Object]
@@ -56,7 +56,9 @@ module Proxy
 
     # Encoding method for DataMapper.
     def encode_with(out)
-      out.map = { 'type' => '!ruby/symbol ' + @type.inspect, 'value' => @value }
+      out.map = {
+        'type' => '!ruby/symbol ' + @type.inspect,
+        'value' => @value }
       case @type
       when :literal, :proxied
         out['note'] = @note if not @note.nil?
@@ -88,8 +90,9 @@ module Proxy
     #
     # @overload initialize(object)
     #
-    #   Initializes as a "value"-type message (i.e. either as a literal value or as a proxied
-    #   object, as appropriate for the object's type (see {is_copyable?}, {CopyableTypes}).
+    #   Initializes as a "value"-type message (i.e. either as a literal value
+    #   or as a proxied object, as appropriate for the object's type (see
+    #   {is_copyable?}, {CopyableTypes}).
     #
     #   @param [Object] object The object to export.
     #    
@@ -155,8 +158,8 @@ module Proxy
       @type == :release
     end
 
-    # Check if this is a proxied object message and must be registered with the local ObjectNode
-    # before being sent.
+    # Check if this is a proxied object message and must be registered with the
+    # local ObjectNode before being sent.
     def must_register?
       @type == :proxied
     end
