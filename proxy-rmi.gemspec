@@ -20,7 +20,4 @@ EOF
                     'lib/proxy/Notifier.rb'
                     ]
   s.authors	= ['Collin J. Sutton']
-  # s.add_runtime_dependency('gstreamer', '~> 2.0', '>= 2.0.2')
-  # s.executables << 'crispcam-client' \
-  # 		<< 'crispcam-daemon'
 end  
