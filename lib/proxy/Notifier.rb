@@ -9,6 +9,13 @@ module Proxy
     @condition_variable = nil
     @signalled = nil
 
+    # @!attribute [r]
+    #   Whether the notifier has been signalled.
+    #   @return [Boolean]
+    def signalled?
+      @mutex.synchronize { @signalled }
+    end
+
     # Initialize the notifer's internal machinery.
     def initialize()
       @signalled = false
