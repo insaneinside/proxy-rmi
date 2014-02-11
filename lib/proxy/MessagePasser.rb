@@ -169,7 +169,7 @@ module Proxy
       end
     end
 
-    # Fetch the next (unfiltered) message from the remote node.
+    # Fetch the next unfiltered message from the remote node.
     def receive_message()
       if connection_open?
         obj = @incoming_messages.pop
