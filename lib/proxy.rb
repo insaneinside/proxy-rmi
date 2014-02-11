@@ -47,8 +47,8 @@ module Proxy
     begin
       _raise(*a)
     rescue Exception => e
-      $stderr.print e.class, ": ", e.message, "\n"
-      $stderr.puts e.backtrace unless e.backtrace.nil?
+      $stderr.puts(e.inspect)
+      $stderr.puts(e.backtrace) unless e.backtrace.nil?
     end
   end
 end
