@@ -98,8 +98,8 @@ module Proxy
 
 
     def set_streams(istream, ostream)
-      @input_stream = Socket.for_fd(istream.fileno)
-      @output_stream = Socket.for_fd(ostream.fileno)
+      @input_stream = istream
+      @output_stream = ostream
     end
 
     # Initialize a new instance of MessagePasser.
@@ -222,7 +222,7 @@ module Proxy
       begin
         while not @output_stream.closed?
           msg = @outgoing_messages.pop
-          @output_stream.sendmsg([msg.data.length].pack('N') + msg.data)
+          @output_stream.write([msg.data.length].pack('N') + msg.data)
           msg.signal
         end
       rescue EOFError, Errno::EPIPE => e
@@ -240,10 +240,10 @@ module Proxy
       begin
         while not @input_stream.closed?
           # Receive and load the message.
-          len = @input_stream.recv(4).unpack('N')[0]
+          len = @input_stream.read(4).unpack('N')[0]
           break if len.nil?
 
-          data = @input_stream.recv(len)
+          data = @input_stream.read(len)
           begin
             msg = Marshal.load(data)
           rescue TypeError => e
