@@ -134,9 +134,21 @@ module Proxy
     end
 
     # Create a result or value message.  
+    # @overload self.export(obj, note=nil)
+    #   @param [Object] obj The object to export.
+    #   @param [Object] note A transaction-ID or similar.
+    #
+    # @overload self.export(obj, flags, note=nil)
+    #   @param [Object] obj The object to export.
+    #   @param [Array<Symbol>] flags Export flags (e.g. `:nocopy`)
+    #   @param [Object] note A transaction-ID or similar.
     def self.export(obj, b = nil, note = nil)
-      note = b if not b.nil? and not b.kind_of?(Array)
-      new(obj, b, note)
+      if not b.nil? and not b.kind_of?(Array)
+        note = b
+        b = nil
+      end
+
+      self.new(obj, b, note)
     end
 
     # Create a release message.
