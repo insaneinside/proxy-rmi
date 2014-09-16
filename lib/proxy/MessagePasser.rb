@@ -75,7 +75,7 @@ module Proxy
     @incoming_messages = nil
     @outgoing_messages = nil
 
-    @recieve_thread = nil
+    @receive_thread = nil
     @send_thread = nil
 
     @pending_messages = nil
