@@ -208,15 +208,23 @@ module Proxy
     def enqueue_waiter(opts)
       waiter = PendingMessageWait.new(opts)
       @pending_messages_mutex.synchronize do
-        # Check for unfiltered messages that match this waiter.
-        inc_que = @incoming_messages.instance_variable_get(:@que)
-        inc_que.each { |im|
-          if waiter.matches?(im)
-            inc_que.delete(im)
-            waiter.signal(im)
-            return waiter
-          end }
-        @pending_messages.push(waiter) if not waiter.signalled?
+        # Check for unfiltered messages that match this waiter.  Used to depend
+        # on being able to access instance variables of Queue, but doesn't work
+        # in Ruby 2.1.2 anymore so we dump the entire incoming message queue,
+        # look for a match, and rebuild it instead.
+        messages = []
+        messages << @incoming_messages.pop() while not @incoming_messages.empty?
+        begin
+          messages.each { |im|
+            if waiter.matches?(im)
+              messages.delete(im)
+              waiter.signal(im)
+              return waiter
+            end }
+          @pending_messages.push(waiter) if not waiter.signalled?
+        ensure
+          @incoming_messages.push(messages.pop()) while not messages.empty?
+        end
       end
       return waiter
     end
