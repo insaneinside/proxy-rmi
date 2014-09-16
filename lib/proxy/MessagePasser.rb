@@ -167,13 +167,12 @@ module Proxy
       msg = Message.new(msg) if msg.kind_of?(Symbol)
       raise TypeError.new("Bad message type #{msg.class.name}") if
         not msg.kind_of?(Proxy::Message)
+      raise Errno::ESHUTDOWN if not connection_open?()
 
-      if connection_open?
-        $stderr.puts("#{self}.#{__method__}(#{msg}#{blocking ? ', true' : ''})") if @verbose
-        qm = OutgoingMessage.new(msg)
-        @outgoing_messages.push(qm)
-        qm.wait if blocking
-      end
+      $stderr.puts("#{self}.#{__method__}(#{msg}#{blocking ? ', true' : ''})") if @verbose
+      qm = OutgoingMessage.new(msg)
+      @outgoing_messages.push(qm)
+      qm.wait if blocking
     end
 
     # Fetch the next unfiltered message from the remote node.
