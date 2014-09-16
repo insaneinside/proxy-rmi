@@ -185,12 +185,7 @@ module Proxy
                 cli = ObjectNode.new(sock, @verbose)
                 @clients << cli
                 Thread.new {
-                  begin
-                    client_loop(cli)
-                  rescue IOError, Errno::EPIPE
-                    cli.close()
-                    Thread.exit
-                  end
+                  client_loop(cli)
                 }
               end
             rescue IOError, Errno::EPIPE, Errno::EBADF
@@ -216,12 +211,15 @@ module Proxy
           msg = node.receive_message()
           handle_message(node, msg) if not msg.nil? and not node.handle_message(msg)
         end
-      rescue => e
-        node.close
-        raise e
+      rescue => err
+        $stderr.puts(err.inspect)
+        $stderr.puts("    " + err.backtrace.join("\n    "))
+        Thread.exit
+      ensure
+        node.close() if node.connection_open?
+        @clients.delete(node) if @clients.include?(node)
+        @client_disconnect_handler.call() if not @client_disconnect_handler.nil?
       end
-      @clients.delete(node) if @clients.include?(node)
-      @client_disconnect_handler.call() if not @client_disconnect_handler.nil?
 
       $stderr.puts("[#{self.class}] Exited client loop for connection #{node.socket.inspect}\n") if @verbose
     end
