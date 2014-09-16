@@ -81,6 +81,8 @@ module Proxy
     @pending_messages = nil
     @pending_messages_mutex = nil
 
+    MESSAGE_SEPARATOR = '\0\0\0\0'
+
     # @!attribute [r]
     #   Instance's input stream.
     #   @return [IO]
@@ -236,6 +238,7 @@ module Proxy
       begin
         while not @output_stream.closed?
           msg = @outgoing_messages.pop
+          @output_stream.write(MESSAGE_SEPARATOR)
           @output_stream.write([msg.data.length].pack('N') + msg.data)
           msg.signal
         end
@@ -253,6 +256,7 @@ module Proxy
     def receive_message_loop()
       begin
         while not @input_stream.closed?
+          @input_stream.readline(MESSAGE_SEPARATOR)
           # Receive and load the message.
           len = @input_stream.read(4).unpack('N')[0]
           break if len.nil?
