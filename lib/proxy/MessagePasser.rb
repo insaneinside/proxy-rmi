@@ -19,7 +19,14 @@ module Proxy
       super()
       case msg
       when Proxy::Message
-        @data = Marshal.dump(msg)
+        begin
+          @data = Marshal.dump(msg)
+        rescue => err
+          msg = 'Error dumping %s: %s' % [msg.inspect, err.message]
+          e = err.class.new(msg)
+          e.set_backtrace(err.backtrace)
+          raise e
+        end
       when String
         @data = msg
       else
