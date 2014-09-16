@@ -20,6 +20,14 @@ module Proxy
     end
     alias_method :[], :fetch
 
+    def initialize(*a)
+      super(*a)
+      Thread.new do
+        while connection_open?
+          handle_message(receive_message())
+        end
+      end
+    end
 
     # Evaluate code on the other side of the connection.  Note that remote
     # evaluation is disabled by default in Server.
