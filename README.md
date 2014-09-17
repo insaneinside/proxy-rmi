@@ -54,9 +54,9 @@ argument to `Proxy::ObjectNode.new`, `Proxy::Server.new`, or
     Server-like usage is chosen whenever the first argument to `new` is a class
     _and_ responds to `open`.
 
-  * `Client` extends ObjectNode with methods `list_objects()` (which requests a
-    list of the object names exported by a Server instance), and `fetch(name)`
-    (which fetches a particular exported object by name).
+  * `Client` extends ObjectNode with methods `list_objects()`, which requests a
+    list of the object names exported by a Server instance, and `fetch(name)`,
+    aliased as `[]`, which fetches a particular exported object by name.
 
 
 ## This code may break _everything_
