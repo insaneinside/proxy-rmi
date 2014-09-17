@@ -233,6 +233,7 @@ module Proxy
     # Close the node's connection to the remote host.
     def close(reason=nil)
       send_message(GenericMessage.new(:bye, nil, reason.nil? ? nil : { :note => reason }), true) if connection_open?
+      @object_references.clear()
       super()
     end
 
