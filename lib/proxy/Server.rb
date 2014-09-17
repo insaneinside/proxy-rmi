@@ -257,8 +257,8 @@ module Proxy
       when :eval
         if @eval_enabled
           o = begin
-                Kernel.eval(msg.value)
-              rescue SyntaxError => err
+                eval(msg.value)
+              rescue => err
                 err
               end
           node.send_message(node.export(o, msg.note))
