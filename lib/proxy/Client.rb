@@ -6,7 +6,7 @@ module Proxy
     # List the objects exported by the remote server.
     # @return [Array<String>] An array of exported object names.
     def list_objects
-      send_message(Message.new(:list_exported))
+      send_message(GenericMessage.new(:list_exported))
       handle_message(wait_for_message(:note => :exports))
     end
 
@@ -15,7 +15,7 @@ module Proxy
     # @param [String] name The name of the remote object to fetch.  This should
     #   be one of the names returned by `list_objects`.
     def fetch(name)
-      send_message(Message.new(:fetch, name))
+      send_message(GenericMessage.new(:fetch, name))
       handle_message(wait_for_message(:note => name))
     end
     alias_method :[], :fetch
@@ -38,7 +38,7 @@ module Proxy
     # @param [String] string Code to be evaluated.
     def remote_eval(string)
       note = 'eval_' + Time.now.to_s
-      send_message(Message.new(:eval, string, note))
+      send_message(GenericMessage.new(:eval, string, note))
       handle_message(wait_for_message(:note => note))
     end
   end

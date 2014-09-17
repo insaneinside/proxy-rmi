@@ -1,96 +1,65 @@
 module Proxy
-
-  # Special value-type used for method invocation requests.
-  class InvokeMsg
-    @id = nil
-    @sym = nil
-    @args = nil
-    @block = nil
-    attr_reader :id, :sym, :args, :block
-    def initialize(_remote_id, symbol, args_array, block_obj)
-      begin
-        @id = _remote_id
-        @sym = symbol
-        @args = args_array
-        @block = block_obj
-      rescue SystemStackError => err
-        $stderr.puts(err.inspect)
-        $stderr.puts(err.backtrace.join("\n"))
-      end
-    end
-  end
-
   # Structured representation of a network message.
   class Message
     # Classes of which instances will be copied rather than proxied.
     CopyableTypes = [ Bignum, Complex, FalseClass, File::Stat, Fixnum, Float,
                       Integer, MatchData, NilClass, Process::Status, Range,
-                      Regexp, String, TrueClass, Exception ]
+                      Regexp, String, Symbol, TrueClass ]
+    DumpVarCount = 2
 
     @type = nil
-    @value = nil
-    @raw_value = nil
     @note = nil
 
     # Optional note about the value's significance.
     # @!attribute [r] note
     #   @return [String,nil]
-    attr_reader :note
+    attr_reader(:note)
 
     # Kind of value enclosed in the message.
     # @!attribute [r] type
     #   @return [Symbol]
     attr_reader(:type)
 
-    # Value that will be transmitted with the message.  This will _always_ be a
-    # copyable type (see {is_copyable?}, {CopyableTypes}).
-    #
-    # @!attribute [r] value
-    #   @return [Object]
-    attr_reader(:value)
-
-    # Original, unexported value.
-    # @!attribute [r] raw_value
-    #   @return [Object]
-    attr_reader(:raw_value)
-
-    # Encoding method for DataMapper.
-    def encode_with(out)
-      out.map = {
-        'type' => '!ruby/symbol ' + @type.inspect,
-        'value' => @value }
-      case @type
-      when :literal, :proxied
-        out['note'] = @note if not @note.nil?
-      end
-    end
-
-    # Determine if an object can be sent by value.
-    # @param [Object] val Value to test
-    # @return [true,false] `true` if the object can be sent by value.
-    # @see {CopyableTypes}
-    def self.is_copyable?(val)
-      case val
-      when Array
-        not val.collect {|x| is_copyable?(x) }.include?(false)
-      when Hash
-        val.kind_of?(Hash) and
-          is_copyable?(val.keys) and
-          is_copyable?(val.values)
-      else
-        CopyableTypes.include?(val.class)
-      end
-    end
-
     # Enumerator specifying which values should be dumped by `::Marshal.dump`.
     def marshal_dump
-      [@type, @value, @note]
+      raise self.inspect if @type.nil? and @note.nil?
+      [@type, @note]
     end
 
     # Restores a Message from from the values dumped by `::Marshal.dump`.
     # @see marshal_dump
     def marshal_load(ary)
-      @type, @value, @note = ary
+      @type, @note = ary
+    end
+
+
+    # Encoding method for DataMapper.
+    def encode_with(out)
+      out.map = {
+        'type' => '!ruby/symbol ' + @type.inspect,
+      }
+      out['note'] = @note unless @note.nil?
+    end
+
+
+
+    # Determine if an object can be sent by value.
+    # @param [Object] val Value to test
+    # @return [true,false] `true` if the object can be sent by value.
+    # @see {CopyableTypes}
+    def self.copyable?(val, attrs=nil)
+      attrs = ObjectNode.get_class_attributes(val.class) if attrs.nil?
+      not attrs.include?(:nocopy) and
+        case val
+        when Array
+          not val.collect {|x| copyable?(x) }.include?(false)
+        when Hash
+          val.kind_of?(Hash) and
+            copyable?(val.keys) and
+            copyable?(val.values)
+        else
+          CopyableTypes.include?(val.class)
+        end
     end
 
     # Initialize a new Message instance.
@@ -99,10 +68,10 @@ module Proxy
     #
     #   Initializes as a "value"-type message (i.e. either as a literal value
     #   or as a proxied object, as appropriate for the object's type (see
-    #   {is_copyable?}, {CopyableTypes}).
+    #   {copyable?}, {CopyableTypes}).
     #
     #   @param [Object] object The object to export.
-    #    
+    #
     #
     # @overload initialize(type, value, note = nil)
     #
@@ -111,56 +80,40 @@ module Proxy
     #   @param [Symbol] type Type of message to create.
     #   @param [Object] value Message's body.
     #   @param [Object] note A transaction-ID or similar.
-    def initialize(a, b = nil, note = nil)
-      @note = note
-      case a
-      when Symbol
-        @type = a
-        @value = b
-        @raw_value = b
-      else
-        @raw_value = a
-        if Message.is_copyable?(a) and (b.nil? or (b.kind_of?(Array) and
-                                                   not b.include?(:nocopy)))
-          @type = :literal
-          @value = @raw_value if not @raw_value.nil?
-        else
-          @type = :proxied
-          @value = [@raw_value.__id__, @raw_value.class.name]
-        end
-      end
+    def initialize(_type, *rest)
+      @type = _type
+      @note = nil
+      opts = {}
+
+      rest.
+        select { |el| el.kind_of?(Hash) }.
+        each { |hsh| rest.delete(hsh); opts.merge!(hsh) }
+      @note = rest.shift || opts[:note]
+
       # $stderr.puts("#{self.class}::#{__method__}(): result = #{self}")
       self
     end
 
-    # Create a result or value message.  
-    # @overload self.export(obj, note=nil)
-    #   @param [Object] obj The object to export.
-    #   @param [Object] note A transaction-ID or similar.
+    ## Create a result or value message.
     #
-    # @overload self.export(obj, flags, note=nil)
-    #   @param [Object] obj The object to export.
-    #   @param [Array<Symbol>] flags Export flags (e.g. `:nocopy`)
-    #   @param [Object] note A transaction-ID or similar.
-    def self.export(obj, b = nil, note = nil)
-      if not b.nil? and not b.kind_of?(Array)
-        note = b
-        b = nil
-      end
-
-      self.new(obj, b, note)
+    # @param [Symbol] type either `:literal` or `:proxied`
+    #
+    # @param [Object] note Object or object-identifying data to export.
+    def self.export(type, obj, *rest)
+      raise ArgumentError.new('Invalid export type `%s`' % type.inspect) unless [:literal, :proxied].include?(type)
+      GenericMessage.new(type, obj, *rest)
     end
 
     # Create a release message.
     def self.release(obj)
       raise TypeError.new('We should not be creating a release message from anything except an Integer/Fixnum!') if
         not Integer === obj
-      new(:release, obj)
+      GenericMessage.new(:release, obj)
     end
 
     # Create an invocation-request message.
     def self.invoke(remote_id, symbol, args_array, block_obj, note = nil)
-      new(:invoke, InvokeMsg.new(remote_id, symbol, args_array, block_obj), note)
+      InvokeMsg.new(remote_id, symbol, args_array, block_obj, :note => note)
     end
 
 
@@ -171,7 +124,7 @@ module Proxy
 
     # Check if this is a result or value message.
     def is_result?
-      [:proxied, :literal].include?(@type)
+      [:proxied, :literal, :local].include?(@type)
     end
 
     # Check if this is a "release" command message.
@@ -185,6 +138,45 @@ module Proxy
       @type == :proxied
     end
     alias_method :is_proxied?, :must_register?
+  end
+
+  class GenericMessage < Message
+    @value = nil
+
+    # Value that will be transmitted with the message.  This will _always_ be a
+    # copyable type (see {copyable?}, {CopyableTypes}).
+    #
+    # @!attribute [r] value
+    #   @return [Object]
+    attr_reader(:value)
+
+    # Encoding method for DataMapper.
+    def encode_with(out)
+      out.map = {
+        'type' => '!ruby/symbol ' + @type.inspect,
+        'value' => @value }
+      case @type
+      when :literal, :proxied
+        out['note'] = @note if not @note.nil?
+      end
+    end
+
+    # Enumerator specifying which values should be dumped by `::Marshal.dump`.
+    def marshal_dump
+      super() + [@value]
+    end
+
+    # Restores a Message from from the values dumped by `::Marshal.dump`.
+    # @see marshal_dump
+    def marshal_load(ary)
+      super(ary.slice!(0, Message::DumpVarCount))
+      @value = ary[0]
+    end
+
+    def initialize(_type, _value = nil, *rest)
+      super(_type, *rest)
+      @value = _value
+    end
 
     def inspect
       to_s
@@ -192,9 +184,87 @@ module Proxy
 
     def to_s
       sup = super()
-      [ sup[0..-2], @type.to_s, @value.inspect ].join(?:) +
+      [ sup[0..-2], @type.to_s,
+        case @type
+        when :proxied
+          @value.reverse.join(?/)
+        else
+          @value.inspect
+        end].join(?:) +
         ( @note.nil? ? "" : " (note #{@note.inspect})" ) +
         '>'
     end
+  end
+
+
+  # Special value-type used for method invocation requests.
+  class InvokeMsg < Message
+    @id = nil
+    @sym = nil
+    @args = nil
+    @block = nil
+    attr_reader :id, :sym, :args, :block
+
+    # Enumerator specifying which values should be dumped by `::Marshal.dump`.
+    def marshal_dump
+      super() + [@id, @sym, @args, @block]
+    end
+
+    # Restores a Message from from the values dumped by `::Marshal.dump`.
+    # @see marshal_dump
+    def marshal_load(ary)
+      super(ary.slice!(0, Message::DumpVarCount))
+      @id, @sym, @args, @block = ary
+    end
+
+    def initialize(_remote_id, symbol, args_array, block_obj, *rest)
+      super(:invoke, *rest)
+      begin
+        @id = _remote_id
+        @sym = symbol
+        @args = args_array
+        @block = block_obj
+      rescue SystemStackError => err
+        $stderr.puts(err.inspect)
+        $stderr.puts(err.backtrace.join("\n"))
+      end
+    end
+  end
+
+  class ErrorMessage < Message
+    @exception_class = nil
+    @message = nil
+    @backtrace = nil
+
+    attr_reader(:exception_class)
+    attr_reader(:message)
+    attr_reader(:backtrace)
+
+
+    # Enumerator specifying which values should be dumped by `::Marshal.dump`.
+    def marshal_dump
+      super() + [@exception_class, @message, @backtrace]
+    end
+
+    # Restores a Message from from the values dumped by `::Marshal.dump`.
+    # @see marshal_dump
+    def marshal_load(ary)
+      super(ary.slice!(0, Message::DumpVarCount))
+      @exception_class, @message, @backtrace = ary
+    end
+
+    def initialize(exception, *rest)
+      super(:error, *rest)
+      @exception_class = exception.class.name
+      @message = exception.message
+      @backtrace = exception.backtrace
+    end
+
+    def exception
+      klass = Module.const_get(@exception_class.intern)
+      e = klass.new(desc.message)
+      e.set_backtrace(desc.backtrace)
+      e
+    end      
   end
 end

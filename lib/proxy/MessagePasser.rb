@@ -166,7 +166,7 @@ module Proxy
     # Queue a message to be sent to the remote node.
     # @param [Proxy::Message] msg Message to send.
     def send_message(msg, blocking=false)
-      msg = Message.new(msg) if msg.kind_of?(Symbol)
+      msg = GenericMessage.new(msg) if msg.kind_of?(Symbol)
       raise TypeError.new("Bad message type #{msg.class.name}") if
         not msg.kind_of?(Proxy::Message)
       raise Errno::ESHUTDOWN if not connection_open?()

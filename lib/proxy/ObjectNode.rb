@@ -12,7 +12,22 @@ module Proxy
   # `public_send`, ensuring that method visibility is preserved.
   class ObjectNode < MessagePasser
     @@method_attributes_table = Hash.new(Hash.new([]))
+    @@class_attributes_table = Hash.new([])
 
+    def self.set_class_attributes(klass, attrs)
+      @@class_attributes_table[klass] = attrs
+    end
+    public_class_method :set_class_attributes
+
+    def self.get_class_attributes(klass)
+      o = []
+      klass.ancestors.each do |k|
+        o += @@class_attributes_table[k] if @@class_attributes_table.has_key?(k)
+      end
+      o
+    end
+
+    # Set attributes on a specific method.
     def self.set_method_attributes(klass, method, attrs)
       klass = klass.name if klass.kind_of?(Class)
       @@method_attributes_table[klass][method] = attrs
@@ -24,7 +39,11 @@ module Proxy
       @@method_attributes_table[klass][method]
     end
 
-    # Reference holder for local objects proxied to the other end of the connection.  
+    set_class_attributes(::Exception, [:nocopy])
+    set_class_attributes(::Proc, [:nocopy])
+
+
+    # Reference holder for local objects proxied to the other end of the connection.
     ObjectReference = Struct.new(:obj, :refcount)
 
     # Object-reference hash.
@@ -142,16 +161,24 @@ module Proxy
     #
     # @param [Object] obj Object to send
     #
-    # @param [String,nil] note A note indicating what the contained value is.
-    #
     # @return [Proxy::Message] A message ready to send to the remote node.
-    def export(obj, b = nil, note = nil)
-      # $stderr.print("#{self}.#{__method__}(#{obj}) ") if @verbose      
-
-      m = Message.export(obj, b, note)
-      register(m) if m.must_register?
-      # $stderr.puts("=> #{m}") if @verbose
-      m
+    def export(obj, *rest)
+      # $stderr.print("#{self}.#{__method__}(#{obj}) ") if @verbose
+      if obj.kind_of?(Message)
+        obj
+      else
+        m =
+          if obj.kind_of?(Proxy::Object) and obj.proxy_client == self
+            GenericMessage.new(:local, obj.proxy_id, *rest)
+          elsif Message.copyable?(obj)
+            Message.export(:literal, obj, *rest)
+          else
+            Message.export(:proxied, [obj.__id__, obj.class.name], *rest)
+          end
+        register(m) if m.must_register?
+        # $stderr.puts("=> #{m}") if @verbose
+        m
+      end
     end
 
 
@@ -160,8 +187,9 @@ module Proxy
     # @param [Proxy::Message] msg Message from which to import.
     # @return [Proxy::Object,Object] A proxied or copied object.
     def import(msg)
-      $stderr.puts("#{self}.#{__method__}(#{msg})") if @verbose
-      if msg.must_register?
+      # $stderr.puts("#{self}.#{__method__}(#{msg})") if @verbose
+      raise msg.inspect unless [:literal, :proxied].include?(msg.type)
+      if msg.type == :proxied
         Proxy::Object.new(self, *(msg.value))
       else
         msg.value
@@ -205,8 +233,8 @@ module Proxy
     end
 
     # Close the node's connection to the remote host.
-    def close()
-      send_message(Message.new(:bye), true)
+    def close(reason=nil)
+      send_message(GenericMessage.new(:bye, nil, reason.nil? ? nil : { :note => reason }), true) if connection_open?
       super()
     end
 
@@ -220,7 +248,7 @@ module Proxy
       raise RuntimeError.new("Invalid `nil` message!") if msg.nil?
       case msg.type
       when :error
-        raise(import(msg))
+        raise msg.exception
         true
 
       when :literal, :proxied
@@ -229,9 +257,11 @@ module Proxy
         # the initiating message (`handle_message` is a better choice than
         # `import` because that response could have had type `:error`).
         import(msg)
-        
+
+      when :local
+        @object_references[msg.value].obj
+
       when :bye
-        send_message(Message.new(:bye_ACK))
         $stderr.puts("[#{self}] Received \"bye\" message: shutting down.") if @verbose
         close()
         true
@@ -250,7 +280,7 @@ module Proxy
                           ObjectNode.get_method_attributes(obj.class, msg.value.sym),
                           msg.note)
         rescue => e
-          result = Message.new(:error, e.kind_of?(Exception) ? e : RuntimeError.new(e), msg.note)
+          result = ErrorMessage.new(e, :note => msg.note)
         end
         send_message(result)
         true

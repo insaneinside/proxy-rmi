@@ -266,10 +266,10 @@ module Proxy
 
       when :list_exported
         o = @objects.keys
-        node.send_message(node.export(o, :exports))
+        node.send_message(node.export(o, :note => :exports))
 
       else
-        node.send_message(Message.new(:error, "Unknown message type #{msg.type.inspect}"))
+        node.send_message(ErrorMessage.new(RuntimeError.new("Unknown message type #{msg.type.inspect}")))
       end
 
     end
