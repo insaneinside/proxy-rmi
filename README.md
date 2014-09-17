@@ -18,7 +18,7 @@ argument to `Proxy::ObjectNode.new`, `Proxy::Server.new`, or
 
   * `ObjectNode` contains most of the object-proxy logic, and may be useful as
     a base for custom classes.  To relieve the developer of the burden of
-    reference-management, it manages a table of remotely-held proxy objects for
+    reference management, it manages a table of remotely-held proxy objects for
     local objects, and makes use of object finalizers on locally-held proxies
     to release remote objects.
 
