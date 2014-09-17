@@ -209,24 +209,15 @@ module Proxy
       # TODO: We need to transform any Proxy::Object arguments (that are local
       # to the remote node) into some kind of
       # "please-reference-your-local-object" arguments.
-      msg = Message.invoke(id, sym, args, block ? export(block) : nil, msg_id)
+      msg = Message.invoke(id, sym, args.collect { |a| export(a) }, block ? export(block) : nil, msg_id)
 
 
       if attrs.kind_of?(Array) and attrs.include?(:noreturn)
         send_message(msg)
         return true
-      end
-      rmsg = send_message_and_wait(msg, :note => msg_id)
-
-      case rmsg.type
-      when :literal
-        rmsg.value
-      when :proxied
-        import(rmsg)
-      when :error
-        raise rmsg.value
       else
-        rmsg.value
+        rmsg = send_message_and_wait(msg, :note => msg_id)
+        handle_message(rmsg)
       end
     end
 
@@ -271,13 +262,23 @@ module Proxy
       when :invoke
         result = nil
         begin
-          raise 'That\'s not an exported object!' if not @object_references.has_key?(msg.value.id)
-          obj = @object_references[msg.value.id].obj
-          $stderr.puts("[#{self}] Invoking #{obj}.#{msg.value.sym.to_s}(#{msg.value.args.collect { |a| a.inspect }.join(', ')})") if @verbose
+          raise 'That\'s not an exported object!' if not @object_references.has_key?(msg.id)
+          obj = @object_references[msg.id].obj
+          # $stderr.puts("[#{self}] Invoking #{obj}.#{msg.sym.to_s}(#{msg.args.collect { |a| a.inspect }.join(', ')})") if @verbose
+          args = msg.args.collect { |a| import(a) }
 
-          result = export(obj.public_send(msg.value.sym, *(msg.value.args), &(msg.value.block)),
-                          ObjectNode.get_method_attributes(obj.class, msg.value.sym),
-                          msg.note)
+          if not msg.block.nil?
+            block = import(msg.block)
+            result = export((q = obj.public_send(msg.sym, *args, &proc { |*a| block.call(*a) })),
+                            :attributes => (ObjectNode.get_method_attributes(obj.class, msg.sym) |
+                                            ObjectNode.get_class_attributes(q.class)),
+                            :note => msg.note)
+          else
+            result = export((q = obj.public_send(msg.sym, *args)),
+                            :attributes => (ObjectNode.get_method_attributes(obj.class, msg.sym) |
+                                            ObjectNode.get_class_attributes(q.class)),
+                            :note => msg.note)
+          end
         rescue => e
           result = ErrorMessage.new(e, :note => msg.note)
         end
