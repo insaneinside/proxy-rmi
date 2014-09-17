@@ -17,6 +17,10 @@ module Proxy
       @ProxyObject_object_id
     end
 
+    def proxy_client
+      @ProxyObject_client
+    end
+
     # Initialize a new remote-object reference/proxy.
     #
     # @param [ObjectNode] client ObjectNode _connected_ to the remote node that owns the object being
