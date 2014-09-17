@@ -63,8 +63,8 @@ argument to `Proxy::ObjectNode.new`, `Proxy::Server.new`, or
 and the author provides no guarantees of safety, suitability, _or_ sanity for a
 particular purpose.  ProxyRMI is still undergoing some changes in its API, and
 is by no means stable enough to use in production code unless you are willing
-to pick up the pieces.  No support can be provided by the author at the current
-time.
+to pick up the pieces.  Only minimal support can be provided by the author at
+the current time.
 
 ProxyRMI currently has no support for sharing a local proxy for an object that
 lives on one remote node to a third-party node.  Because its connection scheme
