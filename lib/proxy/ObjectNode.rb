@@ -1,5 +1,3 @@
-require 'yaml'
-
 ['Message', 'Object', 'MessagePasser'].each { |n| Proxy.require File.expand_path('../' + n, __FILE__) }
 
 module Proxy
