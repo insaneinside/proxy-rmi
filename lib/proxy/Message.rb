@@ -9,6 +9,14 @@ module Proxy
 
     @type = nil
     @note = nil
+    @source_thread = nil
+
+    # Thread in which the message was created.  This is currently used for
+    # ProxyRMI diagnostic output only.
+    #
+    # @!attribute [r]
+    #   @return [Thread]
+    attr_reader(:source_thread)
 
     # Optional note about the value's significance.
     # @!attribute [r] note
@@ -81,6 +89,7 @@ module Proxy
     #   @param [Object] value Message's body.
     #   @param [Object] note A transaction-ID or similar.
     def initialize(_type, *rest)
+      @source_thread = Thread.current
       @type = _type
       @note = nil
       opts = {}
@@ -178,13 +187,12 @@ module Proxy
       @value = _value
     end
 
-    def inspect
-      to_s
+    def to_s
+      @value.inspect
     end
 
-    def to_s
-      sup = super()
-      [ sup[0..-2], @type.to_s,
+    def inspect
+      [ "#<#{self.class}:#{'%#x' % self.object_id.abs}",
         case @type
         when :proxied
           @value.reverse.join(?/)
@@ -199,6 +207,7 @@ module Proxy
 
   # Special value-type used for method invocation requests.
   class InvokeMsg < Message
+    @proxy_klass = nil
     @id = nil
     @sym = nil
     @args = nil
@@ -215,12 +224,14 @@ module Proxy
     def marshal_load(ary)
       super(ary.slice!(0, Message::DumpVarCount))
       @id, @sym, @args, @block = ary
+      @proxy_klass = ObjectSpace._id2ref(@id).class.name
     end
 
-    def initialize(_remote_id, symbol, args_array, block_obj, *rest)
+    def initialize(_proxy_obj, symbol, args_array, block_obj, *rest)
       super(:invoke, *rest)
       begin
-        @id = _remote_id
+        @id = _proxy_obj.proxy_id
+        @proxy_klass = _proxy_obj.proxy_class
         @sym = symbol
         @args = args_array
         @block = block_obj
@@ -229,6 +240,11 @@ module Proxy
         $stderr.puts(err.backtrace.join("\n"))
       end
     end
+
+    def to_s()
+      "#<%s:0x%x>.#{@sym.to_s}(#{@args.collect { |a| a.inspect }.join(', ')})" % [@proxy_klass, @id]
+    end
+    alias :inspect :to_s
   end
 
   class ErrorMessage < Message

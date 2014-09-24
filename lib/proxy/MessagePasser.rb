@@ -5,17 +5,37 @@ module Proxy
   # A queued outgoing message.
   class OutgoingMessage < Notifier
     @data = nil
+    @source = nil
+    @related_wait = nil
 
     # Serialized message data.
     # @!attribute [r] data
     #   @return [String]
     attr_reader :data
 
+    # Source message data.
+    attr_reader :source
+
+    # A related Notifier object.  This may be e.g. a notifier that triggers on
+    # the incoming reply to the message contained in this object.
+    #
+    # @!attribute [r]
+    #   @return [Proxy::Notifier]
+    attr_reader :related_wait
+
+
     # Initialize an OutgoingMessage object.
     #
     # @param [Proxy::Message,String] msg The Message object being queued, or a string acquired
     #     by calling `Marshal.dump` on the same.
-    def initialize(msg)
+    #
+    # @param [Proxy::Notifier,nil] _related_wait A notifier somehow related to
+    #     this message.  This is currently used to decide whether
+    #     outgoing-message log messages should be marked as expecting a
+    #     response when MessagePasser#verbose is `true`.
+    def initialize(msg, _related_wait = nil)
+      @source = msg
+      @related_wait = _related_wait
       super()
       case msg
       when Proxy::Message
@@ -68,6 +88,8 @@ module Proxy
 
   # Message-passing interface specialized for use by Proxy's ObjectNodes.
   class MessagePasser
+    MESSAGE_SEPARATOR = '\0\0\0\0'
+
     @input_stream = nil
     @output_stream = nil
     @verbose = nil
@@ -81,7 +103,15 @@ module Proxy
     @pending_messages = nil
     @pending_messages_mutex = nil
 
-    MESSAGE_SEPARATOR = '\0\0\0\0'
+    @transaction_stacks = nil
+    @transaction_mutex = nil
+
+    # Transaction nesting for each thread using this MessagePasser.  Used for
+    # diagnostic output.
+    #
+    # @!attribute [r]
+    #   @return Hash<Thread,Array>
+    attr_reader :transaction_stacks
 
     # @!attribute [r]
     #   Instance's input stream.
@@ -139,6 +169,9 @@ module Proxy
       @pending_messages = []
       @pending_messages_mutex = Mutex.new
 
+      @transaction_stacks = Hash.new { |hsh, key| hsh[key] = [] }
+      @transaction_mutex = Mutex.new
+
       @receive_thread = Thread.new { receive_message_loop() }
       @send_thread = Thread.new { send_message_loop() }
     end
@@ -154,7 +187,7 @@ module Proxy
       @receive_thread.kill if @receive_thread.alive?
       @send_thread.kill if @send_thread.alive?
     end
-      
+
     # Whether or not the connection is currently open.
     # @!attribute [r] connection_open?
     #   @return [Boolean]
@@ -163,25 +196,39 @@ module Proxy
         @receive_thread.alive? and @send_thread.alive?
     end
 
+    # Helper for keeping track of use by MessagePasser subclasses.
+    def transaction(id, &block)
+      @transaction_mutex.synchronize { @transaction_stacks[Thread.current].push(id) } if @verbose
+      o = block.call()
+      @transaction_mutex.synchronize { @transaction_stacks[Thread.current].pop() } if @verbose
+      o
+    end
+
     # Queue a message to be sent to the remote node.
     # @param [Proxy::Message] msg Message to send.
-    def send_message(msg, blocking=false)
+    def send_message(msg, blocking=false, related_wait = nil)
       msg = GenericMessage.new(msg) if msg.kind_of?(Symbol)
       raise TypeError.new("Bad message type #{msg.class.name}") if
         not msg.kind_of?(Proxy::Message)
       raise Errno::ESHUTDOWN if not connection_open?()
 
-      $stderr.puts("#{self}.#{__method__}(#{msg}#{blocking ? ', true' : ''})") if @verbose
-      qm = OutgoingMessage.new(msg)
+      qm = OutgoingMessage.new(msg, related_wait)
       @outgoing_messages.push(qm)
       qm.wait if blocking
     end
 
     # Fetch the next unfiltered message from the remote node.
-    def receive_message()
+    def receive_message(blocking=true)
       if connection_open?
-        obj = @incoming_messages.pop
-        obj.instance_variable_set(:@type, obj.instance_variable_get(:@type).intern)
+        obj = blocking \
+          ? @incoming_messages.pop \
+          : begin
+              @incoming_messages.pop(true)
+            rescue
+              nil
+            end
+
+        obj.instance_variable_set(:@type, obj.instance_variable_get(:@type).intern) unless obj.nil?
         obj
       end
     end
@@ -194,7 +241,7 @@ module Proxy
     # @param [Hash] opts Incoming-message match patterns.
     def send_message_and_wait(msg, opts)
       waiter = enqueue_waiter(opts)
-      send_message(msg)
+      send_message(msg, false, waiter)
       waiter.wait()
     end
 
@@ -202,19 +249,18 @@ module Proxy
     #
     # @param [Hash] opts
     def wait_for_message(opts)
-      $stderr.puts("#{self}.#{__method__}(#{opts.inspect})") if @verbose
       enqueue_waiter(opts).wait()
     end
 
     private
     def enqueue_waiter(opts)
       waiter = PendingMessageWait.new(opts)
+      # Check for unfiltered messages that match this waiter.  Used to depend
+      # on being able to access instance variables of Queue, but doesn't work
+      # in Ruby 2.1.2 anymore so we dump the entire incoming message queue,
+      # look for a match, and rebuild it instead.
+      messages = []
       @pending_messages_mutex.synchronize do
-        # Check for unfiltered messages that match this waiter.  Used to depend
-        # on being able to access instance variables of Queue, but doesn't work
-        # in Ruby 2.1.2 anymore so we dump the entire incoming message queue,
-        # look for a match, and rebuild it instead.
-        messages = []
         messages << @incoming_messages.pop() while not @incoming_messages.empty?
         begin
           messages.each { |im|
@@ -232,6 +278,19 @@ module Proxy
     end
 
 
+    def log_message_transaction(msg, direction, flag = false)
+      if @verbose
+        dstring = {:outgoing => '[31m->[0m', :incoming => '[32m<-[0m'}[direction]
+        note = msg.note.nil? ? '' : msg.note.inspect
+
+        $stderr.puts('%-48s [1;97m%-2s[0m%3s [33m%-16s[0m %-16s %s' %
+                     ['%s[94m%s[0m' % [@transaction_stacks[msg.source_thread].join('+') + '>', self.inspect],
+                      dstring, flag ? ((direction == :outgoing) ? '[#]' : '[*]') : '', note, msg.type, msg.inspect])
+
+        $stderr.flush()
+      end
+    end
+
     # "Send" thread main loop.  Fetches `OutgoingMessage`s from the outgoing queue, sends them,
     # and signals the `OutgoingMessage` object for send-notification.
     def send_message_loop()
@@ -240,7 +299,9 @@ module Proxy
           msg = @outgoing_messages.pop
           @output_stream.write(MESSAGE_SEPARATOR)
           @output_stream.write([msg.data.length].pack('N') + msg.data)
+          @output_stream.flush()
           msg.signal
+          log_message_transaction(msg.source, :outgoing, (not msg.related_wait.nil?))
         end
       rescue EOFError, Errno::EPIPE => e
         $stderr.puts(e.message)
@@ -278,8 +339,10 @@ module Proxy
 
           if not matches.empty?
             matches.each { |m| m.signal(msg) }
+            log_message_transaction(msg, :incoming, true)
           else
             @incoming_messages.push(msg)
+            log_message_transaction(msg, :incoming)
           end
         end
       rescue EOFError, Errno::EBADF, Errno::EPIPE

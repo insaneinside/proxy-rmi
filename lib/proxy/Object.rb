@@ -17,6 +17,11 @@ module Proxy
       @ProxyObject_object_id
     end
 
+    def proxy_class
+      @ProxyObject_class_name
+    end
+
+
     def proxy_client
       @ProxyObject_client
     end

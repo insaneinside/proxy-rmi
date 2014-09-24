@@ -15,8 +15,10 @@ module Proxy
     # @param [String] name The name of the remote object to fetch.  This should
     #   be one of the names returned by `list_objects`.
     def fetch(name)
-      send_message(GenericMessage.new(:fetch, name))
-      handle_message(wait_for_message(:note => name))
+      transaction(name) do
+        send_message(GenericMessage.new(:fetch, name, :note => name))
+        handle_message(wait_for_message(:note => name))
+      end
     end
     alias_method :[], :fetch
 

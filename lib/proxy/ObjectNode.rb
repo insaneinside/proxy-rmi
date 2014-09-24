@@ -76,7 +76,6 @@ module Proxy
         raise ArgumentError.new("Don't know what to do with arguments: #{s.inspect}")
       end
 
-      # $stderr.puts("#{self}.#{__method__}(#{socket})")
       @object_references = {}
 
       @next_message_id = 0
@@ -168,7 +167,7 @@ module Proxy
     #
     #   @return [Integer] `id`
     def register(arg)
-      $stderr.puts("#{self}.#{__method__}(#{arg})") if @verbose
+      $stderr.puts("#{self}.#{__method__}(#{arg.inspect})") if @verbose
       case arg
       when Integer
         if not @object_references.has_key? arg
@@ -271,24 +270,24 @@ module Proxy
 
     # Invoke a method on a remote object.
     #
-    # @param [Integer] id Remote object ID
+    # @param [Proxy::Object] obj Local proxied object reference.
     # @param [Symbol] sym Method to invoke.
     # @param [Array] args Object
     # @return Result of the remote method call.
-    def invoke(id, sym, args, block, attrs = nil)
-      $stderr.puts("#{self}.#{__method__}: #<0x%x>.#{sym.to_s}(#{args.collect { |a| a.inspect }.join(', ')})" % id) if @verbose
-
+    def invoke(obj, sym, args, block, attrs = nil)
       msg_id = next_message_id()
+      transaction(msg_id) do
+        msg = Message.invoke(obj, sym,
+                             args.collect { |a| Message.copyable?(a) ? a : export(a) },
+                             block ? export(block) : nil, msg_id)
 
-      msg = Message.invoke(id, sym, args.collect { |a| export(a) }, block ? export(block) : nil, msg_id)
-
-
-      if attrs.kind_of?(Array) and attrs.include?(:noreturn)
-        send_message(msg)
-        return true
-      else
-        rmsg = send_message_and_wait(msg, :note => msg_id)
-        handle_message(rmsg)
+        if attrs.kind_of?(Array) and attrs.include?(:noreturn)
+          send_message(msg)
+          true
+        else
+          rmsg = send_message_and_wait(msg, :note => msg_id)
+          handle_message(rmsg)
+        end
       end
     end
 
@@ -332,28 +331,30 @@ module Proxy
 
       when :invoke
         result = nil
-        begin
-          raise 'That\'s not an exported object!' if not @object_references.has_key?(msg.id)
-          obj = @object_references[msg.id].obj
-          # $stderr.puts("[#{self}] Invoking #{obj}.#{msg.sym.to_s}(#{msg.args.collect { |a| a.inspect }.join(', ')})") if @verbose
-          args = msg.args.collect { |a| import(a) }
-
-          if not msg.block.nil?
-            block = import(msg.block)
-            result = export((q = obj.public_send(msg.sym, *args, &proc { |*a| block.call(*a) })),
-                            :attributes => (ObjectNode.get_method_attributes(obj.class, msg.sym) |
-                                            ObjectNode.get_class_attributes(q.class)),
-                            :note => msg.note)
-          else
-            result = export((q = obj.public_send(msg.sym, *args)),
-                            :attributes => (ObjectNode.get_method_attributes(obj.class, msg.sym) |
-                                            ObjectNode.get_class_attributes(q.class)),
-                            :note => msg.note)
+          transaction(msg.note) do
+            result =
+              begin
+                raise 'That\'s not an exported object!' if not @object_references.has_key?(msg.id)
+                obj = @object_references[msg.id].obj
+                # $stderr.puts("[#{self}] Invoking #{obj}.#{msg.sym.to_s}(#{msg.args.collect { |a| a.inspect }.join(', ')})") if @verbose
+                args = msg.args.collect { |a| import(a) }
+                if not msg.block.nil?
+                  block = import(msg.block)
+                  export((q = obj.public_send(msg.sym, *args, &block)),
+                         :attributes => (ObjectNode.get_method_attributes(obj.class, msg.sym) |
+                                         ObjectNode.get_class_attributes(q.class)),
+                         :note => msg.note)
+                else
+                  export((q = obj.public_send(msg.sym, *args)),
+                         :attributes => (ObjectNode.get_method_attributes(obj.class, msg.sym) |
+                                         ObjectNode.get_class_attributes(q.class)),
+                         :note => msg.note)
+                end
+              rescue => e
+                ErrorMessage.new(e, :note => msg.note)
+              end
+            send_message(result)
           end
-        rescue => e
-          result = ErrorMessage.new(e, :note => msg.note)
-        end
-        send_message(result)
         true
 
       when :release
@@ -363,6 +364,10 @@ module Proxy
       else
         false
       end
+    end
+
+    def inspect
+      "#<#{self.class}:#{'%#x' % self.object_id.abs}>"
     end
   end                           # class ObjectNode
 end                             # module Proxy
