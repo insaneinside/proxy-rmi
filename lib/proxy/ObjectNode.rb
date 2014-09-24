@@ -166,10 +166,14 @@ module Proxy
         obj
       else
         m =
-          if obj.kind_of?(Proxy::Object) and obj.proxy_client == self
+          if Proxy::Object === obj and obj.proxy_client == self
             GenericMessage.new(:local, obj.proxy_id, *rest)
+          elsif obj.kind_of?(Proxy::Notifier)
+            export(obj.wait(), *rest)
           elsif Message.copyable?(obj)
             Message.export(:literal, obj, *rest)
+          elsif obj.kind_of?(Class)
+            Message.export(:class, obj.name, *rest)
           else
             Message.export(:proxied, [obj.__id__, obj.class.name], *rest)
           end
@@ -185,12 +189,24 @@ module Proxy
     # @param [Proxy::Message] msg Message from which to import.
     # @return [Proxy::Object,Object] A proxied or copied object.
     def import(msg)
-      # $stderr.puts("#{self}.#{__method__}(#{msg})") if @verbose
-      raise msg.inspect unless [:literal, :proxied].include?(msg.type)
-      if msg.type == :proxied
-        Proxy::Object.new(self, *(msg.value))
+      case msg
+      when Message
+        # $stderr.puts("#{self}.#{__method__}(#{msg})") if @verbose
+        raise msg.inspect unless [:literal, :proxied, :class].include?(msg.type)
+        if msg.type == :proxied
+          Proxy::Object.new(self, *(msg.value))
+        elsif msg.type == :class
+          ref = Module
+          msg.value.split('::').each do |part|
+            ref = ref.const_get(part.intern)
+          end
+          raise TypeError('Referred type `%s` is undefined' % msg.value) unless ref.name == msg.value
+          ref
+        else
+          msg.value
+        end
       else
-        msg.value
+        msg
       end
     end
 

@@ -100,7 +100,7 @@ module Proxy
     #
     # @param [Object] note Object or object-identifying data to export.
     def self.export(type, obj, *rest)
-      raise ArgumentError.new('Invalid export type `%s`' % type.inspect) unless [:literal, :proxied].include?(type)
+      raise ArgumentError.new('Invalid export type `%s`' % type.inspect) unless [:literal, :proxied, :class].include?(type)
       GenericMessage.new(type, obj, *rest)
     end
 
