@@ -16,6 +16,12 @@ module Proxy
       @mutex.synchronize { @signalled }
     end
 
+
+    # Result passed to the notifier with #signal.
+    # @!attribute [r]
+    #   @return [Object]
+    attr_reader :result
+
     # Initialize the notifer's internal machinery.
     def initialize()
       @signalled = false
