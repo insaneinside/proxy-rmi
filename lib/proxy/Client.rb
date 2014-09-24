@@ -22,11 +22,6 @@ module Proxy
 
     def initialize(*a)
       super(*a)
-      Thread.new do
-        while connection_open?
-          handle_message(receive_message())
-        end
-      end
     end
 
     # Evaluate code on the other side of the connection.  Note that remote

@@ -53,6 +53,8 @@ module Proxy
     @next_message_id = nil
     @next_message_id_mutex = nil
 
+    @service_thread = nil
+    @service_mutex = nil
 
     # Initialize a new object-proxy node.
     #
@@ -79,6 +81,62 @@ module Proxy
 
       @next_message_id = 0
       @next_message_id_mutex = Mutex.new
+
+      @service_thread = nil
+      @service_mutex = Mutex.new
+
+      launch()
+    end
+
+    # @!attribute [r] running?
+    #   Whether the node's service thread is currently running.
+    #   @return [Boolean]
+    def running?
+      @service_mutex.locked?
+    end
+
+
+    # Start the service loop in a separate thread.
+    # @return [Boolean] `true` if a new thread was created, and `false` if it was already
+    #     running.
+    def launch()
+      @service_thread = Thread.new { run() }
+    end
+
+    # Run the service loop in the current thread.  If the server is already
+    # running in a different thread, this call will block until that thread
+    # exits.
+    def run()
+      if not running?
+        # Thread.current.set_trace_func proc { |event, file, line, id, binding, classname|
+        #   printf "%8s %s:%-2d %10s %8s\n", event, file, line, id, classname
+        # }
+        @service_mutex.synchronize do
+          service_message(receive_message()) while connection_open?
+        end
+      elsif not @service_thread.nil? and @service_thread.alive?
+        wait()
+      end
+    end
+
+
+    # Kill the service thread.  This is a ruder version of {#stop}.
+    def kill()
+      @quit_server = true
+      @server_socket.close()
+      @service_thread.kill() if not @service_thread.nil? and @service_thread.alive?
+    end
+
+    # Stop the service thread gracefully.
+    def stop()
+      @quit_server = true
+      @server_socket.close()
+      @service_thread.join() if not @service_thread.nil? and @service_thread.alive?
+    end
+
+    # Wait for the service thread to finish.
+    def wait()
+      @service_thread.join() if not @service_thread.nil? and @service_thread.alive?
     end
 
     def next_message_id()
