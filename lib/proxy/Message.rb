@@ -278,8 +278,8 @@ module Proxy
 
     def exception
       klass = Module.const_get(@exception_class.intern)
-      e = klass.new(desc.message)
-      e.set_backtrace(desc.backtrace)
+      e = klass.new(@message)
+      e.set_backtrace(@backtrace)
       e
     end      
   end
