@@ -222,9 +222,6 @@ module Proxy
 
       msg_id = next_message_id()
 
-      # TODO: We need to transform any Proxy::Object arguments (that are local
-      # to the remote node) into some kind of
-      # "please-reference-your-local-object" arguments.
       msg = Message.invoke(id, sym, args.collect { |a| export(a) }, block ? export(block) : nil, msg_id)
 
 
