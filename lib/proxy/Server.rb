@@ -207,10 +207,7 @@ module Proxy
       @client_connect_handler.call(node) if not @client_connect_handler.nil?
       $stderr.puts("[#{self.class}] Entered client loop for connection #{node.socket}") if @verbose
       begin
-        while node.connection_open? do
-          msg = node.receive_message()
-          handle_message(node, msg) if not msg.nil? and not node.handle_message(msg)
-        end
+        node.run()
       rescue => err
         $stderr.puts(err.inspect)
         $stderr.puts("    " + err.backtrace.join("\n    "))
