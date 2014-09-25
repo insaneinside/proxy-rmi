@@ -2,7 +2,7 @@ require 'socket'
 require 'fileutils'
 require 'continuation'
 
-['Object', 'MessagePasser'].each { |n| Proxy.require File.expand_path('../' + n, __FILE__) }
+['Object', 'MessagePasser', 'ServerNode'].each { |n| Proxy.require File.expand_path('../' + n, __FILE__) }
 
 module Proxy
   # Server class for managing an exported-object list and accepting and
@@ -25,6 +25,8 @@ module Proxy
 
     @client_connect_handler = nil
     @client_disconnect_handler = nil
+
+    attr_reader(:objects)
 
     # Set the server's client-connect handler.
     #
@@ -182,7 +184,7 @@ module Proxy
                 end
 
 
-                cli = ObjectNode.new(sock, @verbose)
+                cli = ServerNode.new(self, sock, @verbose)
                 @clients << cli
                 Thread.new {
                   client_loop(cli)
@@ -220,57 +222,6 @@ module Proxy
 
       $stderr.puts("[#{self.class}] Exited client loop for connection #{node.socket.inspect}\n") if @verbose
     end
-
-    # Handle a message sent to a local object node from the remote peer by performing an action
-    # appropriate to the message's contents.
-    #
-    # @param [Proxy::ObjectNode] node Node that received the message.
-    #
-    # @param [Proxy::Message] msg Message to handle.
-    #
-    # @return [Boolean] `true` if we were able to handle the message, and `false` otherwise.
-    def handle_message(node, msg)
-      $stderr.puts("[#{self.class}] Handling message: #{msg}") if @verbose
-
-      case msg.type
-      when :shutdown
-        $stderr.puts("[#{self.class}] Received server-shutdown command.") if @verbose
-        node.close()
-        @quit_server = true
-        @server_socket.close()
-        @run_thread.kill() if not @run_thread.nil? and @run_thread.alive? and @run_thread != Thread.current
-        
-      when :fetch
-        $stderr.puts("[#{self.class}] Received fetch request for \"#{msg.value}\"") if @verbose
-        obj = @objects[msg.value]
-        o = case obj
-            when Proc
-              obj.call
-            else
-              obj
-            end
-        node.send_message(node.export(o, msg.value))
-
-      when :eval
-        if @eval_enabled
-          o = begin
-                eval(msg.value)
-              rescue => err
-                err
-              end
-          node.send_message(node.export(o, msg.note))
-        end
-
-      when :list_exported
-        o = @objects.keys
-        node.send_message(node.export(o, :note => :exports))
-
-      else
-        node.send_message(ErrorMessage.new(RuntimeError.new("Unknown message type #{msg.type.inspect}")))
-      end
-
-    end
-
 
     # Add an object to the export list.
     #

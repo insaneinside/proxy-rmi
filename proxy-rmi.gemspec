@@ -16,6 +16,7 @@ EOF
                     'lib/proxy/Object.rb',
                     'lib/proxy/ObjectNode.rb',
                     'lib/proxy/Server.rb',
+                    'lib/proxy/ServerNode.rb',
                     'lib/proxy/Notifier.rb'
                     ]
   s.authors	= ['Collin J. Sutton']
