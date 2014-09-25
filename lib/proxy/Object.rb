@@ -49,8 +49,8 @@ module Proxy
 
     # Proxy any calls to missing methods to the remote object.
     def method_missing(sym, *args, &block)
-        @ProxyObject_client.invoke(@ProxyObject_object_id, sym, args, block,
-                                   ObjectNode.get_method_attributes(@ProxyObject_class_name, sym))
+      @ProxyObject_client.invoke(self, sym, args, block,
+                                 ::Proxy::ObjectNode.get_method_attributes(@ProxyObject_class_name, sym))
     end
   end
 end
