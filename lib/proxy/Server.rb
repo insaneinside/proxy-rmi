@@ -1,8 +1,8 @@
+require_relative('../proxy') unless ::Kernel::const_defined?(:Proxy) and ::Proxy.respond_to?(:require_relative)
+Proxy.require_relative('ThreadedService')
+Proxy.require_relative('ServerNode')
 require 'socket'
 require 'fileutils'
-require 'continuation'
-
-['Object', 'MessagePasser', 'ServerNode'].each { |n| Proxy.require File.expand_path('../' + n, __FILE__) }
 
 module Proxy
   # Server class for managing an exported-object list and accepting and
@@ -10,14 +10,12 @@ module Proxy
   # transports like TCP and UNIX sockets, but can handle single-peer style
   # usage as well.
   class Server
-    @objects = nil
+    include ThreadedService
+    @front = nil
     @clients = nil
 
     @verbose = nil
     @eval_enabled = false
-
-    @run_mutex = nil
-    @run_thread = nil
 
     @main_args = nil
     @server_socket = nil
@@ -26,7 +24,10 @@ module Proxy
     @client_connect_handler = nil
     @client_disconnect_handler = nil
 
-    attr_reader(:objects)
+    # "Front" object presented by the server.
+    # @!attribute [rw]
+    #   @return [Object]
+    attr_accessor(:front)
 
     # Set the server's client-connect handler.
     #
@@ -44,13 +45,6 @@ module Proxy
       @client_disconnect_handler = block
     end
 
-    # @!attribute [r] running?
-    #   Whether the server is currently running.
-    #   @return [Boolean]
-    def running?
-      @run_mutex.locked?
-    end
-
     # Whether verbose output is enabled.
     # @!attribute [rw] verbose
     #   @return [Boolean]
@@ -64,13 +58,14 @@ module Proxy
     # Initialize the server instance.
     # @param [*Object] args Arguments to be passed to Server#server_main.
     def initialize(*args)
-      super()
-      @verbose = false
+      verbose = false
+      verbose = args.pop if args.size > 1 and
+        (args[-1].kind_of?(FalseClass) or args[-1].kind_of?(TrueClass))
+
+      @verbose = verbose
       @eval_enabled = false
-      @objects = {}
+      @front = nil
       @clients = []
-      @run_mutex = Mutex.new
-      @run_thread = nil
       @main_args = args
       @server_socket = nil
       @quit_server = false
@@ -82,50 +77,27 @@ module Proxy
       if args[0].kind_of?(Class) and args[0] == UNIXServer
         ObjectSpace.define_finalizer(self, proc { |id| FileUtils::rm_f(args[1]) if File.exist?(args[1]) })
       end
+
+      super(proc { server_main(*@main_args) }, method(:halt_impl))
     end
 
-    # Start the server loop in a separate thread.
-    # @return [Boolean] `true` if a new thread was created, and `false` if it was already
-    #     running.
-    def launch()
-      if not running?
-        @run_thread = Thread.new { server_main(*@main_args) }
-        sleep(0.01)
-        true
-      else
-        false
-      end
+    # Add an object to the export list.  The front object must be either `nil`,
+    # or a hash.
+    #
+    # @param [Object] name Key for the exported object.
+    # @param [Object] val Object to export.
+    def add(name, val)
+      raise 'Front object is already initialized and not a hash!' unless @front.nil? or @front.kind_of?(Hash)
+      @front = {} if @front.nil?
+      @front[name] = val
     end
 
-    # Run the server loop in the current thread.  If the server is already
-    # running in a different thread, this call will block until that thread
-    # exits.
-    def run()
-      if not running?
-        server_main(*@main_args)
-      elsif not @run_thread.nil? and @run_thread.alive?
-        wait()
-      end
-    end
-      
 
-    # Kill the server thread.  This is a ruder version of {#stop}.
-    def kill()
+    private
+    # Stop the server's main loop.
+    def halt_impl()
       @quit_server = true
-      @server_socket.close()
-      @run_thread.kill() if not @run_thread.nil? and @run_thread.alive?
-    end
-
-    # Stop the server thread gracefully.
-    def stop()
-      @quit_server = true
-      @server_socket.close()
-      @run_thread.join() if not @run_thread.nil? and @run_thread.alive?
-    end
-
-    # Wait for the server thread to finish.
-    def wait()
-      @run_thread.join() if not @run_thread.nil? and @run_thread.alive?
+      @server_socket.close() unless @server_socket.nil? or @server_socket.closed?
     end
 
     # Main routine for the server thread.
@@ -157,50 +129,46 @@ module Proxy
     #
     #   @param [Array] *args Arguments to be passed to `server_class.open`.
     def server_main(obj, *args)
-      @run_mutex.synchronize do
-        if not obj.kind_of?(Class)
-          client_loop(ObjectNode.new(obj, *args))
-        elsif obj.respond_to?(:open)
-          $stderr.puts("[#{self.class}] Entering main server loop; server is #{obj.name} #{args.inspect}") if @verbose
+      if not obj.kind_of?(Class)
+        client_loop(ServerNode.new(self, obj, *args))
+      elsif obj.respond_to?(:open)
+        $stderr.puts("[#{self.class}] Entering main server loop; server is #{obj.name} #{args.inspect}") if @verbose
 
-          # sighandler = proc { @run_thread.kill; Process.abort }
-          # Signal.trap(:QUIT, &sighandler)
-          # Signal.trap(:INT, &sighandler)
-          # Signal.trap(:TERM, &sighandler)
-
-          # Delete any old UNIX socket lying around, if needed, and open the server socket.
-          FileUtils::rm_f(args[0]) if obj == UNIXServer
-          obj.open(*args) do |serv|
-            @server_socket = serv
-            begin
-              while not serv.closed? and not @quit_server do
-                begin
-                  sock = serv.accept_nonblock()
-                rescue Errno::EAGAIN
-                  IO.select([serv])
-                  retry
-                rescue Errno::EBADF
-                  break
-                end
-
-
-                cli = ServerNode.new(self, sock, @verbose)
-                @clients << cli
-                Thread.new {
-                  client_loop(cli)
-                }
-              end
-            rescue IOError, Errno::EPIPE, Errno::EBADF
-              break
-            end
-          end
-
-          @clients.each { |cli| cli.close() if cli.connection_open? }
-          FileUtils::rm_rf(args[0]) if obj == UNIXServer
-          $stderr.puts("[#{self.class}] Server loop exited.") if @verbose
-        elsif obj.ancestors.include?(IO)
-          client_loop(ObjectNode.new(obj.new(*args)))
+        # Delete any old UNIX socket lying around, if needed, and open the server socket.
+        FileUtils::rm_f(args[0]) if obj == UNIXServer
+        def obj.open(*a)
+          super(*a)
         end
+        obj.open(*args) do |serv|
+          @server_socket = serv
+          begin
+            while not serv.closed? and not @quit_server do
+              begin
+                sock = serv.accept_nonblock()
+              rescue Errno::EAGAIN
+                IO.select([serv])
+                retry
+              rescue Errno::EBADF
+                break
+              end
+
+
+              cli = ServerNode.new(self, sock, @verbose)
+              @clients << cli
+              Thread.new {
+                client_loop(cli)
+              }
+            end
+          rescue IOError, Errno::EPIPE, Errno::EBADF
+            break
+          end
+        end
+
+        @clients.each { |cli| cli.close() if cli.connection_open? }
+        FileUtils::rm_rf(args[0]) if obj == UNIXServer
+        $stderr.puts("[#{self.class}] Server loop exited.") if @verbose
+      elsif obj.ancestors.include?(IO)
+        client_loop(ServerNode.new(obj.new(*args)))
       end
     end
 
@@ -208,6 +176,7 @@ module Proxy
     def client_loop(node)
       @client_connect_handler.call(node) if not @client_connect_handler.nil?
       $stderr.puts("[#{self.class}] Entered client loop for connection #{node.socket}") if @verbose
+
       begin
         node.run()
       rescue => err
@@ -221,14 +190,6 @@ module Proxy
       end
 
       $stderr.puts("[#{self.class}] Exited client loop for connection #{node.socket.inspect}\n") if @verbose
-    end
-
-    # Add an object to the export list.
-    #
-    # @param [String] name Name for the exported object.
-    # @param [Object] val Object to export.
-    def add(name, val)
-      @objects[name] = val
     end
   end
 end

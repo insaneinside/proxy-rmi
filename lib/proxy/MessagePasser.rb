@@ -1,117 +1,28 @@
-Proxy.require(File.expand_path('../Notifier', __FILE__))
 require 'thread'
+require 'fcntl'
+require 'atomic'
 
 module Proxy
-  # A queued outgoing message.
-  class OutgoingMessage < Notifier
-    @data = nil
-    @source = nil
-    @related_wait = nil
-
-    # Serialized message data.
-    # @!attribute [r] data
-    #   @return [String]
-    attr_reader :data
-
-    # Source message data.
-    attr_reader :source
-
-    # A related Notifier object.  This may be e.g. a notifier that triggers on
-    # the incoming reply to the message contained in this object.
-    #
-    # @!attribute [r]
-    #   @return [Proxy::Notifier]
-    attr_reader :related_wait
-
-
-    # Initialize an OutgoingMessage object.
-    #
-    # @param [Proxy::Message,String] msg The Message object being queued, or a string acquired
-    #     by calling `Marshal.dump` on the same.
-    #
-    # @param [Proxy::Notifier,nil] _related_wait A notifier somehow related to
-    #     this message.  This is currently used to decide whether
-    #     outgoing-message log messages should be marked as expecting a
-    #     response when MessagePasser#verbose is `true`.
-    def initialize(msg, _related_wait = nil)
-      @source = msg
-      @related_wait = _related_wait
-      super()
-      case msg
-      when Proxy::Message
-        begin
-          @data = Marshal.dump(msg)
-        rescue => err
-          msg = 'Error dumping %s: %s' % [msg.inspect, err.message]
-          e = err.class.new(msg)
-          e.set_backtrace(err.backtrace)
-          raise e
-        end
-      when String
-        @data = msg
-      else
-        raise ArgumentError.new("Invalid type #{msg.class} for initialization of #{__class__}")
-      end
-    end
-  end
-
-  # A notifier that waits for a specific incoming message.
-  class PendingMessageWait < Notifier
-    @properties = nil
-
-    # Initialize the object, specifying the match criteria.
-    #
-    # @param [Hash] opts Property/value pairs that must exist on matching messages.
-    def initialize(opts)
-      super()
-      @properties = opts
-    end
-
-    # Check if a message matches the waiter's requirements.
-    #
-    # @param [Proxy::Message] msg The message to check against.
-    def matches?(msg)
-      result = true
-      begin
-        @properties.each_pair { |k, v|
-          if msg.public_send(k.intern) != v
-            result = false
-            break
-          end
-        }
-      rescue NoMethodError
-        result = false
-      end
-      result
-    end
-  end
-
   # Message-passing interface specialized for use by Proxy's ObjectNodes.
   class MessagePasser
-    MESSAGE_SEPARATOR = '\0\0\0\0'
+    WRITE_METHODS = [:send_nonblock, :syswrite, :write]
+    READ_METHODS = [:recv_nonblock, :sysread, :read]
 
     @input_stream = nil
     @output_stream = nil
     @verbose = nil
 
-    @incoming_messages = nil
-    @outgoing_messages = nil
-
-    @receive_thread = nil
-    @send_thread = nil
-
-    @pending_messages = nil
-    @pending_messages_mutex = nil
-
     @transaction_stacks = nil
-    @transaction_mutex = nil
+    @message_sequence = nil
+
+    @stopping = nil
 
     # Transaction nesting for each thread using this MessagePasser.  Used for
     # diagnostic output.
     #
     # @!attribute [r]
     #   @return Hash<Thread,Array>
-    attr_reader :transaction_stacks
+    attr_reader(:transaction_stacks)
 
     # @!attribute [r]
     #   Instance's input stream.
@@ -127,19 +38,33 @@ module Proxy
     #   Input *and* output streams.
     #   @return [Array<IO>]
     def socket
-      [@input_stream, @output_stream]
+      @input_stream == @output_stream \
+        ? @input_stream \
+        : [@input_stream, @output_stream]
     end
+
+    # Whether or not the connection is currently open.
+    # @!attribute [r] connection_open?
+    #   @return [Boolean]
+    def connection_open?
+      not @input_stream.closed? and not @output_stream.closed?
+    end
+
+
+    # Whether the message passer has shut down or is in the process of shutting
+    # down.
+    # @!attribute [r]
+    #   @return [Boolean]
+    def stopping?
+      @stopping
+    end
+
 
     # Whether verbose (debug) output is enabled.
     # @!attribute [rw] verbose
     #   @return [Boolean]
     attr_accessor :verbose
 
-
-    def set_streams(istream, ostream)
-      @input_stream = istream
-      @output_stream = ostream
-    end
 
     # Initialize a new instance of MessagePasser.
     #
@@ -152,202 +77,177 @@ module Proxy
     #
     #   @param [Array<IO>] streams Input and output streams to use for sending
     #     and receiving messages, respectively.
-    def initialize(socket, verbose = false)
-      if socket.kind_of?(Array)
-        set_streams(socket[0], socket[1])
+    def initialize(_sock, _verbose = false)
+      _sock = [_sock] unless _sock.kind_of?(Array)
+      if _sock.length == 2
+        set_streams(*_sock)
       else
-        set_streams(socket, socket)
+        set_streams(_sock[0], _sock[0])
       end
-      @input_stream.sync = true if @input_stream.respond_to?(:sync=)
-      @output_stream.sync = true if @output_stream.respond_to?(:sync=)
-      @verbose = verbose
 
+      @message_sequence = Atomic.new(0)
 
-      @incoming_messages = Queue.new
-      @outgoing_messages = Queue.new
+      @verbose = _verbose
 
-      @pending_messages = []
-      @pending_messages_mutex = Mutex.new
+      @stopping = false
 
-      @transaction_stacks = Hash.new { |hsh, key| hsh[key] = [] }
-      @transaction_mutex = Mutex.new
-
-      @receive_thread = Thread.new { receive_message_loop() }
-      @send_thread = Thread.new { send_message_loop() }
+      @transaction_stacks = Hash.new { [] }
     end
+
+
+    # Set the input and output streams to use for communication.
+    #
+    # @param [#sysread,#recv_nonblock] istream IO-like object to use as the
+    #     input channel.
+    #
+    # @param [#syswrite,#send_nonblock] ostream IO-like object to use as the
+    #     output channel.
+    def set_streams(istream, ostream)
+      @input_stream = istream
+      @output_stream = ostream
+
+      # @input_stream.sync = true if @input_stream.respond_to?(:sync=)
+      # @output_stream.sync = true if @output_stream.respond_to?(:sync=)
+
+      @input_stream.fcntl(::Fcntl::F_SETFL, ::Fcntl::O_NONBLOCK) if @input_stream.respond_to?(:fcntl)
+      @output_stream.fcntl(::Fcntl::F_SETFL, ::Fcntl::O_NONBLOCK) if @output_stream.respond_to?(:fcntl)
+
+      @input_read_method = READ_METHODS.select { |sym| @input_stream.respond_to?(sym) }.first
+      @output_write_method = WRITE_METHODS.select { |sym| @output_stream.respond_to?(sym) }.first
+    end
+
 
     # Close the connection.
     def close()
-      $stderr.puts("#{self}.#{__method__}()") if @verbose
+      @stopping = true
+      # $stderr.puts("#{self}.#{__method__}()") if @verbose
       begin
         @input_stream.close() if not @input_stream.closed?
-        @output_stream.close() if not @output_stream.closed?
-      rescue Errno::EBADF
+        @output_stream.close() if not @output_stream.closed? and @output_stream != @input_stream
+      # rescue Errno::EBADF
       end
-      @receive_thread.kill if @receive_thread.alive?
-      @send_thread.kill if @send_thread.alive?
-    end
-
-    # Whether or not the connection is currently open.
-    # @!attribute [r] connection_open?
-    #   @return [Boolean]
-    def connection_open?
-      not @input_stream.closed? and not @output_stream.closed? and
-        @receive_thread.alive? and @send_thread.alive?
     end
 
     # Helper for keeping track of use by MessagePasser subclasses.
     def transaction(id, &block)
-      @transaction_mutex.synchronize { @transaction_stacks[Thread.current].push(id) } if @verbose
+      @transaction_stacks[Thread.current].push(id) if @verbose
       o = block.call()
-      @transaction_mutex.synchronize { @transaction_stacks[Thread.current].pop() } if @verbose
+      @transaction_stacks[Thread.current].pop if @verbose
       o
     end
 
-    # Queue a message to be sent to the remote node.
-    # @param [Proxy::Message] msg Message to send.
-    def send_message(msg, blocking=false, related_wait = nil)
-      msg = GenericMessage.new(msg) if msg.kind_of?(Symbol)
-      raise TypeError.new("Bad message type #{msg.class.name}") if
-        not msg.kind_of?(Proxy::Message)
-      raise Errno::ESHUTDOWN if not connection_open?()
 
-      qm = OutgoingMessage.new(msg, related_wait)
-      @outgoing_messages.push(qm)
-      qm.wait if blocking
-    end
-
-    # Fetch the next unfiltered message from the remote node.
-    def receive_message(blocking=true)
-      if connection_open?
-        obj = blocking \
-          ? @incoming_messages.pop \
-          : begin
-              @incoming_messages.pop(true)
-            rescue
-              nil
-            end
-
-        obj.instance_variable_set(:@type, obj.instance_variable_get(:@type).intern) unless obj.nil?
-        obj
+    # Send a a message to the remote node.
+    #
+    # @param [Proxy::Message,Symbol] msg Message to send. If a `Symbol`, a new
+    #     `GenericMessage` will be created with this value as its type.
+    #
+    # @param [Object] _mid "Note" or message-ID to use if `msg` is not
+    #     a Message or has a `nil` `seq`.
+    def send_message(msg, _seq = nil)
+      raise 'No longer accepting messages' if stopping?
+      seq = _seq || @message_sequence.value
+      if msg.kind_of?(Symbol)
+        msg = GenericMessage.new(msg, :seq => seq)
+      elsif msg.seq.nil?
+        msg.instance_variable_set(:@seq, seq)
       end
+
+      data = Marshal.dump(msg)
+
+      begin
+        @output_stream.public_send(@output_write_method, [data.length].pack('N') + data)
+      rescue IO::WaitWritable
+        IO.select(nil, [@output_stream])
+        retry
+      end
+      seq = @message_sequence.value
+      @message_sequence.update { |v| v + 1 }
+      log_message_transaction(msg, seq, :outgoing, _seq) if @verbose
     end
 
-    # Enqueue a wait for a certain message pattern, enqueue the outgoing
-    # message that should cause the peer to send a matching message, and wait
-    # for the response.
+    # Read the next message sent by the remote node.
     #
-    # @param [Message] msg The message to be sent.
-    # @param [Hash] opts Incoming-message match patterns.
-    def send_message_and_wait(msg, opts)
-      waiter = enqueue_waiter(opts)
-      send_message(msg, false, waiter)
-      waiter.wait()
+    # @return Proxy::Message
+    def receive_message()
+      data = nil
+
+      # Read the message length.
+      lenbuf = ''
+      begin
+        lenbuf += @input_stream.public_send(@input_read_method, 4 - lenbuf.size) while lenbuf.size != 4
+      rescue Errno::EWOULDBLOCK, IO::WaitReadable
+        IO.select([@input_stream])
+        retry
+      rescue Errno::EBADF
+        close
+        return
+      end
+
+      len = lenbuf.unpack('N')[0]
+      # Now read the message data.
+      data = ''
+      begin
+        data += @input_stream.public_send(@input_read_method, len - data.size) while data.size != len
+      rescue Errno::EWOULDBLOCK, IO::WaitReadable
+        IO.select([@input_stream])
+        retry
+      rescue Errno::EBADF
+        close
+        return
+      end
+      msg = Marshal.load(data)
+
+      # raise TypeError.new(msg.inspect) unless msg.kind_of?(Message)
+      # seq = @message_sequence.value
+      @message_sequence.update { |v| v + 1 }
+
+      log_message_transaction(msg, @message_sequence.value, :incoming,
+                              (not msg.seq.nil? and @transaction_stacks[Thread.current][-1] == msg.seq) \
+                              ? true \
+                              : nil) if @verbose
+
+      msg
     end
 
-    # Wait for the next message from the remote node that matches specific criteria.
+    # Send a message, then wait for an incoming message matching specified
+    # criteria via `#wait_for_message`.
     #
-    # @param [Hash] opts
-    def wait_for_message(opts)
-      enqueue_waiter(opts).wait()
+    # @param [Message] msg Message to be sent.
+    # @param [Object] seq "Seq" value for positive message match.
+    def send_message_and_wait(msg, seq)
+      send_message(msg, seq)
+      wait_for_message(seq)
+    end
+
+    # Wait for next message from remote node that has a specific "seq"
+    # attached.  Messages that do *not* match will be handled with
+    # `#handle_message`.
+    #
+    # @param [Object] seq Value of the `seq` field to look for on incoming
+    #     messages.
+    def wait_for_message(seq)
+      next_message = receive_message()
+      while next_message.seq != seq
+        handle_message(next_message)
+        next_message = receive_message()
+      end
+      next_message
     end
 
     private
-    def enqueue_waiter(opts)
-      waiter = PendingMessageWait.new(opts)
-      # Check for unfiltered messages that match this waiter.  Used to depend
-      # on being able to access instance variables of Queue, but doesn't work
-      # in Ruby 2.1.2 anymore so we dump the entire incoming message queue,
-      # look for a match, and rebuild it instead.
-      messages = []
-      @pending_messages_mutex.synchronize do
-        messages << @incoming_messages.pop() while not @incoming_messages.empty?
-        begin
-          messages.each { |im|
-            if waiter.matches?(im)
-              messages.delete(im)
-              waiter.signal(im)
-              return waiter
-            end }
-          @pending_messages.push(waiter) if not waiter.signalled?
-        ensure
-          @incoming_messages.push(messages.pop()) while not messages.empty?
-        end
-      end
-      return waiter
-    end
 
 
-    def log_message_transaction(msg, direction, flag = false)
+    def log_message_transaction(msg, seq, direction, flag = false)
       if @verbose
         dstring = {:outgoing => '[31m->[0m', :incoming => '[32m<-[0m'}[direction]
-        note = msg.note.nil? ? '' : msg.note.inspect
+        seq = msg.seq.nil? ? '' : msg.seq.inspect
 
-        $stderr.puts('%-48s [1;97m%-2s[0m%3s [33m%-16s[0m %-16s %s' %
-                     ['%s[94m%s[0m' % [@transaction_stacks[msg.source_thread].join('+') + '>', self.inspect],
-                      dstring, flag ? ((direction == :outgoing) ? '[#]' : '[*]') : '', note, msg.type, msg.inspect])
+        $stderr.puts('%04u %-48s [1;97m%-2s[0m%3s [33m%-16s[0m %-16s %s' %
+                     [@message_sequence.value, '%s[94m%s[0m' % ['<%s>' % @transaction_stacks[Thread.current].join('+'), self.inspect],
+                      dstring, flag ? ((direction == :outgoing) ? '[#]' : '[*]') : '', seq, msg.type, msg.inspect])
 
         $stderr.flush()
-      end
-    end
-
-    # "Send" thread main loop.  Fetches `OutgoingMessage`s from the outgoing queue, sends them,
-    # and signals the `OutgoingMessage` object for send-notification.
-    def send_message_loop()
-      begin
-        while not @output_stream.closed?
-          msg = @outgoing_messages.pop
-          @output_stream.write(MESSAGE_SEPARATOR)
-          @output_stream.write([msg.data.length].pack('N') + msg.data)
-          @output_stream.flush()
-          msg.signal
-          log_message_transaction(msg.source, :outgoing, (not msg.related_wait.nil?))
-        end
-      rescue EOFError, Errno::EPIPE => e
-        $stderr.puts(e.message)
-        $stderr.puts(e.backtrace.join("\n"))
-        @output_stream.close()
-        Thread.exit
-      end
-    end
-
-    # "Receive" thread main loop.  Fetches messages sent by the remote node and, for each
-    # message, either signals threads waiting on criteria matching that message or (if no
-    # threads were waiting for such a message) pushes it onto the "incoming messages" queue.
-    def receive_message_loop()
-      begin
-        while not @input_stream.closed?
-          @input_stream.readline(MESSAGE_SEPARATOR)
-          # Receive and load the message.
-          len = @input_stream.read(4).unpack('N')[0]
-          break if len.nil?
-
-          data = @input_stream.read(len)
-          begin
-            msg = Marshal.load(data)
-          rescue TypeError => e
-            $stderr.puts("Failed to load message data: >>>#{data}<<<")
-            raise e
-          end
-
-          # Check if there was a wait for it.
-          matches = []
-          @pending_messages_mutex.synchronize do
-            matches = @pending_messages.select { |pm| pm.matches?(msg) }
-            @pending_messages -= matches if not matches.empty?
-          end
-
-          if not matches.empty?
-            matches.each { |m| m.signal(msg) }
-            log_message_transaction(msg, :incoming, true)
-          else
-            @incoming_messages.push(msg)
-            log_message_transaction(msg, :incoming)
-          end
-        end
-      rescue EOFError, Errno::EBADF, Errno::EPIPE
-        @input_stream.close()
-        Thread.exit
       end
     end
   end

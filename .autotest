@@ -1,0 +1,15 @@
+# -*- ruby -*-
+def camel_to_snake(str)
+  str.
+    gsub(/([A-Z]+)([A-Z][a-z])/, '\1_\2').
+    gsub(/([a-z])([A-Z])/, '\1_\2').
+    gsub('-', '_').
+    downcase
+end
+
+Autotest.add_hook :initialize do |at|
+  at.add_mapping(%r!^lib/(.*)/(.*).rb$!) do |_, m|
+    at.files_matching(%r!^test/test_#{Regexp.escape(m[1].downcase)}/test_#{Regexp.escape(camel_to_snake(m[2]))}\.rb$!)
+  end
+  
+end
