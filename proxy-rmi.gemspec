@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 Gem::Specification.new do |s|
   s.platform	= Gem::Platform::RUBY
-  s.name        = 'ProxyRMI'
+  s.name        = 'proxy-rmi'
   s.summary     = 'Fast & flexible dRuby alternative'
   s.description = <<-EOF
   ProxyRMI is a transport-agnostic remote-method-invocation service similar to
