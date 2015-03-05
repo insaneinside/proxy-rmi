@@ -27,7 +27,7 @@ begin
     begin
       # Create the proxy server.
       serv = Proxy::Server.new(server_socket_type,
-                               SocketFile, VERBOSE)
+                               SocketFile, verbose: VERBOSE)
       # Add the alphabet.
       serv.add(:alphabet, ('a'..'z').to_a)
 
@@ -44,7 +44,7 @@ begin
     sleep(0.5)
 
     # Create client/connect to server.
-    cli = Proxy::Client.new(client_socket_type, SocketFile, VERBOSE)
+    cli = Proxy::Client.new(client_socket_type, SocketFile, verbose: VERBOSE)
 
     $stdout.puts('Server exports list: ' + cli.list_exports.inspect)
 

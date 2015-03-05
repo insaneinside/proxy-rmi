@@ -68,16 +68,14 @@ module Proxy
 
     # Initialize a new instance of MessagePasser.
     #
-    # @overload initialize(socket, verbose=false)
+    # @param [IO,Array<IO>] socket The socket/IO stream(s) to use for sending
+    #   and receiving messages.  If this is array of length two, the first
+    #   element will be used for input and the second for output.
     #
-    #   @param [IO] socket The socket or IO stream to use for sending and
-    #     receiving messages.
+    # @param [Hash] opts Options hash.
     #
-    # @overload initialize(streams, verbose=false)
-    #
-    #   @param [Array<IO>] streams Input and output streams to use for sending
-    #     and receiving messages, respectively.
-    def initialize(_sock, _verbose = false)
+    # @option opts [Boolean] :verbose Verbosely report transactions.
+    def initialize(_sock, **opts)
       _sock = [_sock] unless _sock.kind_of?(Array)
       if _sock.length == 2
         set_streams(*_sock)
@@ -87,7 +85,7 @@ module Proxy
 
       @message_sequence = Atomic.new(0)
 
-      @verbose = _verbose
+      @verbose = opts.fetch(:verbose, false)
 
       @stopping = false
 

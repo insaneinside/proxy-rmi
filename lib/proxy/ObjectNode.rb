@@ -85,31 +85,29 @@ module Proxy
 
     # Initialize a new object-proxy node.
     #
-    # @overload initialize(klass, *args, verbose=false)
-    #   @param [#new] klass An IO-like subclass to be instantiated for communication.
-    #   @param [Object] args Arguments to pass to `klass.new`.
-    #   @param [Boolean] verbose Whether to enable verbose diagnostics.
+    # @overload initialize(klass, *args, **opts)
+    #   @param [#new] klass An IO-like class to be instantiated for communication.
+    #   @param [Array<Object>] args Arguments to pass to `klass.new`.
+    #   @param [Hash] opts Options hash to pass to {MessagePasser#new}.
     #
     # @overload initialize(stream, verbose=false)
     #   @param [IO,Array<IO>] stream The stream or streams to use for communication.
-    #   @param [Boolean] verbose Whether to enable verbose diagnostics.
+    #   @param [Hash] opts Options hash to pass to {MessagePasser#new}.
     #
     # @see MessagePasser#set_streams for information on the requirements placed
     #     on the communication streams.
-    def initialize(*args)
-      verbose = false
-      verbose = args.pop if args.size > 1 and
-        (args[-1].kind_of?(FalseClass) or args[-1].kind_of?(TrueClass))
-
-      if args[0].kind_of?(IO) or args[0].kind_of?(Array)
-        super(args, verbose)
-      elsif args[0].respond_to?(:new)
-        super(args[0].new(*args[1..-1]), verbose)
+    def initialize(*args, **opts)
+      f = args.first
+      if f.kind_of?(IO) or f.kind_of?(Array)
+        super(*args, **opts)
+      elsif f.respond_to?(:new)
+        args.shift
+        super(f.new(*args), **opts)
       else
         raise ArgumentError.new("Don't know what to do with arguments: #{args.inspect}")
       end
 
-      @object_references = {}
+     @object_references = {}
     end
 
     # Close the node's connection to the remote host.

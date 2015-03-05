@@ -24,11 +24,11 @@ module Proxy
       @node_stopping or @stopping
     end
 
-    def initialize(_server, *a)
+    def initialize(_server, *a, **opts)
       @server = _server
       @node_stopping = false
       ObjectNode.instance_method(:initialize).
-        bind(self).call(*a)
+        bind(self).call(*a, **opts)
 
       ThreadedService.instance_method(:initialize).
         bind(self).call(method(:run_impl),
