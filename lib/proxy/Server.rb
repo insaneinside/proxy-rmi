@@ -56,12 +56,15 @@ module Proxy
     attr_accessor :eval_enabled
 
     # Initialize the server instance.
-    # @param [*Object] args Arguments to be passed to Server#server_main.
-    def initialize(*args)
-      verbose = false
-      verbose = args.pop if args.size > 1 and
-        (args[-1].kind_of?(FalseClass) or args[-1].kind_of?(TrueClass))
-
+    #
+    # @param [Array<Object>] args Arguments to be passed to {#server_main}.
+    #
+    # @param [Hash] opts Options hash.  This will also be passed through to
+    #   {#server_main}.
+    #
+    # @option opts [Boolean] :verbose Verbosely report connection activity.
+    def initialize(*args, **opts)
+      @options = opts
       @verbose = verbose
       @eval_enabled = false
       @front = nil
@@ -78,7 +81,7 @@ module Proxy
         ObjectSpace.define_finalizer(self, proc { |id| FileUtils::rm_f(args[1]) if File.exist?(args[1]) })
       end
 
-      super(proc { server_main(*@main_args) }, method(:halt_impl))
+      super(proc { server_main(*@main_args, **opts) }, method(:halt_impl))
     end
 
     # Add an object to the export list.  The front object must be either `nil`,
@@ -102,14 +105,17 @@ module Proxy
 
     # Main routine for the server thread.
     #
-    # @overload server_main(stream)
+    # @overload server_main(stream, **opts)
     #
     #   Service a single connection open on `stream`.
     #
     #   @param [IO,Array<IO>] An open IO object, or array of IO objects
     #     corresponding to input and output streams.
     #
-    # @overload server_main(connection_class, *args)
+    #   @param [Hash] opts Options hash to pass to the {ServerNode#initialize
+    #     connection node's constructor}.
+    #
+    # @overload server_main(connection_class, *args, **opts)
     #
     #   Service a single connection opened by calling
     #   `connection_class.new(*args)`.
@@ -118,7 +124,10 @@ module Proxy
     #
     #   @param [Array] *args Arguments to be passed to `connection_class.new`
     # 
-    # @overload server_main(server_class, *args)
+    #   @param [Hash] opts Options hash to pass to the {ServerNode#initialize
+    #     connection node's constructor}.
+    #
+    # @overload server_main(server_class, *args, **opts)
     #
     #   Run the server with support for an arbitrary number of clients via a
     #   connection-based transport.
@@ -128,17 +137,18 @@ module Proxy
     #     an `accept` method.
     #
     #   @param [Array] *args Arguments to be passed to `server_class.open`.
-    def server_main(obj, *args)
+    #
+    #   @param [Hash] opts Options hash to pass to the {ServerNode#initialize
+    #     connection node's constructor}.
+    def server_main(obj, *args, **opts)
       if not obj.kind_of?(Class)
-        client_loop(ServerNode.new(self, obj, *args))
+        client_loop(ServerNode.new(self, obj, *args, **opts))
       elsif obj.respond_to?(:open)
         $stderr.puts("[#{self.class}] Entering main server loop; server is #{obj.name} #{args.inspect}") if @verbose
 
         # Delete any old UNIX socket lying around, if needed, and open the server socket.
         FileUtils::rm_f(args[0]) if obj == UNIXServer
-        def obj.open(*a)
-          super(*a)
-        end
+
         obj.open(*args) do |serv|
           @server_socket = serv
           begin
@@ -153,7 +163,7 @@ module Proxy
               end
 
 
-              cli = ServerNode.new(self, sock, @verbose)
+              cli = ServerNode.new(self, sock, **opts)
               @clients << cli
               Thread.new {
                 client_loop(cli)
@@ -168,7 +178,7 @@ module Proxy
         FileUtils::rm_rf(args[0]) if obj == UNIXServer
         $stderr.puts("[#{self.class}] Server loop exited.") if @verbose
       elsif obj.ancestors.include?(IO)
-        client_loop(ServerNode.new(obj.new(*args)))
+        client_loop(ServerNode.new(obj.new(*args), **opts))
       end
     end
 
