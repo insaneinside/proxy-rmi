@@ -8,7 +8,7 @@ Gem::Specification.new do |s|
   dRuby (DRb), the "distributed object system for Ruby" included in the standard library.  Unlike
   DRb, however, ProxyRMI is designed primarily for flexibility and ease-of-use.
 EOF
-  s.version     = '0.2.0'
+  s.version     = '0.3.0'
   s.files       = [ 'lib/proxy.rb',
                     'lib/proxy/attributes.rb',
                     'lib/proxy/Client.rb',
